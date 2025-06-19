@@ -10,6 +10,9 @@
           integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
           crossorigin=""/>
     
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <!-- Our CSS -->
     <link rel="stylesheet" href="styles/main.css">
 </head>
@@ -17,9 +20,34 @@
     <div class="app-container">
         <div id="map"></div>
         <div class="control-panel">
-            <h2>County Selection Tool</h2>
-            <div id="draw-controls"></div>
-            <div id="results-panel"></div>
+            <div class="panel-header">
+                <h2><i class="fas fa-map-marked-alt"></i> County Selection Tool</h2>
+                <button id="export-btn" class="btn export-btn">
+                    <i class="fas fa-file-export"></i> Export
+                </button>
+            </div>
+            
+            <div class="draw-controls">
+                <button id="draw-btn" class="btn draw-btn active">
+                    <i class="fas fa-draw-polygon"></i> Draw
+                </button>
+                <button id="clear-btn" class="btn clear-btn">
+                    <i class="fas fa-trash-alt"></i> Clear
+                </button>
+            </div>
+            
+            <div class="assignment-controls">
+                <input type="text" id="group-name" placeholder="Enter group name">
+                <button id="assign-btn" class="btn assign-btn">
+                    <i class="fas fa-tags"></i> Assign
+                </button>
+            </div>
+            
+            <div class="results-panel">
+                <h3><i class="fas fa-list-ol"></i> Selected Counties</h3>
+                <div id="county-list" class="county-list"></div>
+                <div id="selection-stats" class="stats"></div>
+            </div>
         </div>
     </div>
 
