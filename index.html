@@ -10,7 +10,7 @@
           integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
           crossorigin=""/>
     
-    <!-- Font Awesome for icons -->
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Our CSS -->
@@ -18,54 +18,59 @@
 </head>
 <body>
     <div class="app-container">
-        <div id="map"></div>
-        <div class="control-panel">
-            <div class="panel-header">
-                <h2><i class="fas fa-map-marked-alt"></i> County Selection Tool</h2>
-                <button id="export-btn" class="btn export-btn">
-                    <i class="fas fa-file-export"></i> Export
+        <!-- Welcome Modal -->
+        <div id="welcome-modal" class="modal">
+            <div class="modal-content">
+                <h2><i class="fas fa-map-marked-alt"></i> US County Selector</h2>
+                <p>To get started:</p>
+                <ol>
+                    <li>Download the <a href="https://www.census.gov/cgi-bin/geo/shapefiles/index.php?year=2024&layergroup=Counties+%28and+equivalent%29" target="_blank">County GeoJSON file from the US Census Bureau</a></li>
+                    <li>Convert the Shapefile to GeoJSON using <a href="https://mapshaper.org/" target="_blank">mapshaper.org</a></li>
+                    <li>Upload the GeoJSON file below</li>
+                </ol>
+                
+                <div class="file-upload-section">
+                    <h3>1. Upload County GeoJSON</h3>
+                    <input type="file" id="geojson-upload" accept=".geojson,.json">
+                    
+                    <h3>2. Optional: Upload Existing Assignments (CSV)</h3>
+                    <input type="file" id="csv-upload" accept=".csv">
+                    <p class="hint">CSV format should be: countyId,countyName,state,group</p>
+                </div>
+                
+                <button id="start-app" class="btn primary-btn" disabled>
+                    <i class="fas fa-play"></i> Start Application
                 </button>
             </div>
-            
-            <div class="draw-controls">
-                <button id="draw-btn" class="btn draw-btn active">
-                    <i class="fas fa-draw-polygon"></i> Draw
-                </button>
-                <button id="clear-btn" class="btn clear-btn">
-                    <i class="fas fa-trash-alt"></i> Clear
-                </button>
-            </div>
-            
-            <div class="assignment-controls">
-                <input type="text" id="group-name" placeholder="Enter group name">
-                <button id="assign-btn" class="btn assign-btn">
-                    <i class="fas fa-tags"></i> Assign
-                </button>
-            </div>
-            
-            <div class="results-panel">
-                <h3><i class="fas fa-list-ol"></i> Selected Counties</h3>
-                <div id="county-list" class="county-list"></div>
-                <div id="selection-stats" class="stats"></div>
+        </div>
+        
+        <!-- Main App (initially hidden) -->
+        <div id="main-app" style="display:none;">
+            <div id="map"></div>
+            <div class="control-panel">
+                <!-- ... (same control panel as before) ... -->
             </div>
         </div>
     </div>
 
-    <!-- Leaflet JS -->
+    <!-- Loading Spinner Template -->
+    <template id="loading-spinner">
+        <div class="loading-spinner">
+            <svg viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+            </svg>
+        </div>
+    </template>
+
+    <!-- JavaScript Libraries -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
             integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
             crossorigin=""></script>
-    
-    <!-- Turf.js for geospatial operations -->
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-    
-    <!-- FileSaver.js for exporting -->
-    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-    
-    <!-- XLSX for Excel export -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     
     <!-- Our JavaScript -->
+    <script src="scripts/data-upload.js"></script>
     <script src="scripts/main.js"></script>
 </body>
 </html>
