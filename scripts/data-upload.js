@@ -12,42 +12,124 @@ document.addEventListener('DOMContentLoaded', function() {
     geojsonUpload.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
-        
-        showLoading('Processing GeoJSON...');
-        
+
+        showLoading('Processing file...');
+        const progress = createProgressBar();
+
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                const data = JSON.parse(e.target.result);
+                const rawData = JSON.parse(e.target.result);
+                updateProgress(progress, 30, "Parsing JSON...");
                 
-                // Handle both GeoJSON and mapshaper's JSON output
-                if (data.type === "FeatureCollection") {
-                    // Standard GeoJSON
-                    countyGeoJSON = data;
-                } else if (data.objects && Object.values(data.objects)[0]) {
-                    // Mapshaper output - convert to GeoJSON
-                    const topLevelKey = Object.keys(data.objects)[0];
-                    const converted = {
-                        type: "FeatureCollection",
-                        features: data.objects[topLevelKey].geometries.map(geom => ({
-                            type: "Feature",
-                            properties: geom.properties || {},
-                            geometry: geom
-                        }))
-                    };
-                    countyGeoJSON = converted;
-                } else {
-                    throw new Error("Unsupported JSON format");
-                }
-                
-                checkReadyState();
-            } catch (error) {
+                // Convert to GeoJSON
+                setTimeout(() => {
+                    try {
+                        countyGeoJSON = convertToGeoJSON(rawData);
+                        updateProgress(progress, 100, "Conversion complete!");
+                        setTimeout(() => {
+                            hideLoading();
+                            checkReadyState();
+                        }, 500);
+                    } catch (convertError) {
+                        updateProgress(progress, 100, "Conversion failed");
+                        setTimeout(() => {
+                            hideLoading();
+                            alert(`Conversion error: ${convertError.message}\n\nPlease ensure you upload a valid shapefile-converted JSON.`);
+                        }, 500);
+                    }
+                }, 300);
+            } catch (parseError) {
                 hideLoading();
-                alert('Error parsing file: ' + error.message + '\n\nPlease ensure you upload a valid GeoJSON or mapshaper JSON file.');
+                alert(`Error parsing file: ${parseError.message}\n\nThe file must be valid JSON.`);
+            }
+        };
+        reader.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 30);
+                updateProgress(progress, percent, "Uploading...");
             }
         };
         reader.readAsText(file);
     });
+
+    function convertToGeoJSON(data) {
+        // Case 1: Already proper GeoJSON
+        if (data.type === "FeatureCollection" && Array.isArray(data.features)) {
+            return data;
+        }
+        
+        // Case 2: Mapshaper output format
+        if (data.objects) {
+            const features = [];
+            let featureCount = 0;
+            
+            // Process each object layer
+            for (const [layerName, layerData] of Object.entries(data.objects)) {
+                if (layerData.geometries) {
+                    featureCount += layerData.geometries.length;
+                    layerData.geometries.forEach(geom => {
+                        features.push({
+                            type: "Feature",
+                            properties: geom.properties || {},
+                            geometry: geom
+                        });
+                    });
+                }
+            }
+            
+            if (features.length > 0) {
+                return {
+                    type: "FeatureCollection",
+                    features: features
+                };
+            }
+        }
+        
+        // Case 3: Try to handle other common formats
+        if (Array.isArray(data)) {
+            return {
+                type: "FeatureCollection",
+                features: data.map(item => ({
+                    type: "Feature",
+                    properties: item.properties || {},
+                    geometry: item.geometry || item
+                }))
+            };
+        }
+        
+        throw new Error("Unsupported JSON format. Could not convert to GeoJSON.");
+    }
+
+    // Progress bar functions
+    function createProgressBar() {
+        const spinner = document.getElementById('loading-spinner');
+        if (!spinner) return null;
+        
+        const progressBar = document.createElement('div');
+        progressBar.className = 'progress-bar';
+        progressBar.innerHTML = `
+            <div class="progress-container">
+                <div class="progress-fill"></div>
+            </div>
+            <div class="progress-text">0%</div>
+            <div class="progress-message">Starting...</div>
+        `;
+        spinner.appendChild(progressBar);
+        return progressBar;
+    }
+
+    function updateProgress(progressBar, percent, message) {
+        if (!progressBar) return;
+        
+        const fill = progressBar.querySelector('.progress-fill');
+        const text = progressBar.querySelector('.progress-text');
+        const msg = progressBar.querySelector('.progress-message');
+        
+        fill.style.width = `${percent}%`;
+        text.textContent = `${percent}%`;
+        msg.textContent = message;
+    }
     
     // Handle CSV upload
     csvUpload.addEventListener('change', function(e) {
