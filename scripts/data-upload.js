@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const startButton = document.getElementById('start-app');
     
     // Handle GeoJSON upload
+    // Replace the existing GeoJSON upload handler with this:
     geojsonUpload.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
@@ -17,11 +18,32 @@ document.addEventListener('DOMContentLoaded', function() {
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                countyGeoJSON = JSON.parse(e.target.result);
+                const data = JSON.parse(e.target.result);
+                
+                // Handle both GeoJSON and mapshaper's JSON output
+                if (data.type === "FeatureCollection") {
+                    // Standard GeoJSON
+                    countyGeoJSON = data;
+                } else if (data.objects && Object.values(data.objects)[0]) {
+                    // Mapshaper output - convert to GeoJSON
+                    const topLevelKey = Object.keys(data.objects)[0];
+                    const converted = {
+                        type: "FeatureCollection",
+                        features: data.objects[topLevelKey].geometries.map(geom => ({
+                            type: "Feature",
+                            properties: geom.properties || {},
+                            geometry: geom
+                        }))
+                    };
+                    countyGeoJSON = converted;
+                } else {
+                    throw new Error("Unsupported JSON format");
+                }
+                
                 checkReadyState();
             } catch (error) {
                 hideLoading();
-                alert('Error parsing GeoJSON: ' + error.message);
+                alert('Error parsing file: ' + error.message + '\n\nPlease ensure you upload a valid GeoJSON or mapshaper JSON file.');
             }
         };
         reader.readAsText(file);

@@ -6,13 +6,19 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Modified init function to accept parameters
         init: function(geoJSON, assignments = {}) {
+            if (!geoJSON || !geoJSON.features || !Array.isArray(geoJSON.features)) {
+                console.error('Invalid GeoJSON data:', geoJSON);
+                alert('The provided file does not contain valid GeoJSON data. Please check the file and try again.');
+                return;
+            }
+            
             this.countyGeoJSON = geoJSON;
             this.countyAssignments = assignments;
             
             this.initMap();
             this.initControls();
-            this.loadCountyData(); // Now uses the passed GeoJSON
-            this.loadAssignments(); // Now uses the passed assignments
+            this.loadCountyData();
+            this.loadAssignments();
         },
         
         // Modified loadCountyData to use local GeoJSON
