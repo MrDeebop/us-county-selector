@@ -3,62 +3,281 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>US County Assignment Tool</title>
+    <title>U.S. County Selection Tool</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .upload-section {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .map-container {
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .instructions {
+            background: #e7f4ff;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .error {
+            color: #e74c3c;
+            margin-top: 10px;
+        }
+        .success {
+            color: #27ae60;
+            margin-top: 10px;
+        }
+        .file-input-wrapper {
+            margin: 15px 0;
+        }
+        .loading {
+            display: none;
+            margin: 10px 0;
+        }
+        .loading.active {
+            display: block;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1>US County Assignment Tool</h1>
+        <h1>U.S. County Selection Tool</h1>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Obtain a U.S. county shapefile from the <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html" target="_blank">U.S. Census Bureau</a></li>
+                <li>Convert it to GeoJSON using <a href="https://mapshaper.org/" target="_blank">mapshaper.org</a></li>
+                <li>Upload the GeoJSON file below</li>
+                <li>Interact with the map to select counties</li>
+            </ol>
+            <p><strong>Note:</strong> Large files may take a moment to process.</p>
+        </div>
         
         <div class="upload-section">
-            <h2>1. Upload County GeoJSON</h2>
-            <input type="file" id="geojson-upload" accept=".geojson,.json">
-            <div id="geojson-status"></div>
+            <h2>Upload Your County GeoJSON File</h2>
+            <div class="file-input-wrapper">
+                <input type="file" id="geojson-file" accept=".geojson,.json">
+            </div>
+            <button id="upload-btn">Upload and Display</button>
+            <div id="loading" class="loading">
+                <p>Processing file... This may take a moment for large files.</p>
+            </div>
+            <div id="message"></div>
         </div>
-
-        <div class="assignment-section" id="assignment-section" style="display: none;">
-            <h2>2. Create County Assignments</h2>
-            
-            <div class="assignment-controls">
-                <input type="text" id="group-name" placeholder="Enter group name">
-                <button id="start-drawing">Start Drawing</button>
-                <button id="end-drawing" disabled>End Selection</button>
-                <button id="clear-drawing">Clear Current</button>
-            </div>
-
-            <div class="map-container">
-                <div id="map"></div>
-            </div>
-
-            <div class="data-actions">
-                <h3>3. Save or Load Assignments</h3>
-                <button id="export-data">Export to Excel</button>
-                <input type="file" id="import-data" accept=".xlsx,.xls,.csv" style="display: none;">
-                <button id="import-button">Import from Excel</button>
-                <button id="clear-all">Clear All Assignments</button>
-            </div>
-
-            <div class="assignments-table">
-                <h3>Current Assignments</h3>
-                <table id="assignments-table">
-                    <thead>
-                        <tr>
-                            <th>Group Name</th>
-                            <th>County Count</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="assignments-body">
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        
+        <div class="map-container" id="map"></div>
+        
+        <div id="selection-info" style="margin-top: 20px;"></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="app.js"></script>
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([39.8283, -98.5795], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // UI elements
+        const fileInput = document.getElementById('geojson-file');
+        const uploadBtn = document.getElementById('upload-btn');
+        const messageDiv = document.getElementById('message');
+        const loadingDiv = document.getElementById('loading');
+        const selectionInfo = document.getElementById('selection-info');
+        
+        let geoJsonLayer = null;
+        let selectedCounties = [];
+
+        uploadBtn.addEventListener('click', handleFileUpload);
+
+        function handleFileUpload() {
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showMessage('Please select a GeoJSON file first.', 'error');
+                return;
+            }
+            
+            if (!file.name.endsWith('.geojson') && !file.name.endsWith('.json')) {
+                showMessage('Please upload a valid GeoJSON file (.geojson or .json extension).', 'error');
+                return;
+            }
+            
+            loadingDiv.classList.add('active');
+            messageDiv.textContent = '';
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const geojsonData = JSON.parse(e.target.result);
+                    
+                    // Validate GeoJSON structure
+                    if (!geojsonData.type || !geojsonData.features) {
+                        throw new Error('Invalid GeoJSON structure. The file should contain FeatureCollection.');
+                    }
+                    
+                    // Clear previous layer if exists
+                    if (geoJsonLayer) {
+                        map.removeLayer(geoJsonLayer);
+                        selectedCounties = [];
+                        updateSelectionInfo();
+                    }
+                    
+                    // Process and display the GeoJSON
+                    processGeoJSON(geojsonData);
+                    
+                    showMessage('File successfully loaded and displayed.', 'success');
+                } catch (error) {
+                    showMessage(`Error processing file: ${error.message}`, 'error');
+                    console.error(error);
+                } finally {
+                    loadingDiv.classList.remove('active');
+                }
+            };
+            
+            reader.onerror = function() {
+                showMessage('Error reading file. Please try again.', 'error');
+                loadingDiv.classList.remove('active');
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        function processGeoJSON(geojsonData) {
+            // Style function for the GeoJSON
+            function style(feature) {
+                return {
+                    fillColor: '#3388ff',
+                    weight: 1,
+                    opacity: 1,
+                    color: 'white',
+                    dashArray: '3',
+                    fillOpacity: 0.7
+                };
+            }
+            
+            // Highlight feature on hover
+            function highlightFeature(e) {
+                const layer = e.target;
+                
+                layer.setStyle({
+                    weight: 3,
+                    color: '#666',
+                    dashArray: '',
+                    fillOpacity: 0.7
+                });
+                
+                layer.bringToFront();
+                
+                // Show county name in info panel
+                const countyName = layer.feature.properties.NAME || layer.feature.properties.name || 'Unnamed County';
+                selectionInfo.innerHTML = `<strong>Hovering:</strong> ${countyName}`;
+            }
+            
+            function resetHighlight(e) {
+                geoJsonLayer.resetStyle(e.target);
+                selectionInfo.textContent = '';
+            }
+            
+            function onEachFeature(feature, layer) {
+                // Get county name from properties
+                const countyName = feature.properties.NAME || feature.properties.name || 'Unnamed County';
+                const stateName = feature.properties.STATE_NAME || feature.properties.state_name || 'Unknown State';
+                
+                // Bind tooltip
+                layer.bindTooltip(`${countyName}, ${stateName}`);
+                
+                // Add click event
+                layer.on({
+                    click: function(e) {
+                        const layer = e.target;
+                        
+                        // Toggle selection
+                        if (selectedCounties.includes(layer.feature)) {
+                            // Deselect
+                            selectedCounties = selectedCounties.filter(f => f !== layer.feature);
+                            layer.setStyle({
+                                fillColor: '#3388ff',
+                                weight: 1
+                            });
+                        } else {
+                            // Select
+                            selectedCounties.push(layer.feature);
+                            layer.setStyle({
+                                fillColor: '#e74c3c',
+                                weight: 2
+                            });
+                        }
+                        
+                        updateSelectionInfo();
+                    },
+                    mouseover: highlightFeature,
+                    mouseout: resetHighlight
+                });
+            }
+            
+            // Create GeoJSON layer
+            geoJsonLayer = L.geoJSON(geojsonData, {
+                style: style,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            
+            // Fit map to the GeoJSON bounds
+            map.fitBounds(geoJsonLayer.getBounds());
+        }
+        
+        function updateSelectionInfo() {
+            if (selectedCounties.length === 0) {
+                selectionInfo.innerHTML = '<strong>No counties selected</strong>';
+                return;
+            }
+            
+            let html = `<strong>Selected Counties (${selectedCounties.length}):</strong><ul>`;
+            
+            selectedCounties.forEach(feature => {
+                const countyName = feature.properties.NAME || feature.properties.name || 'Unnamed County';
+                const stateName = feature.properties.STATE_NAME || feature.properties.state_name || 'Unknown State';
+                html += `<li>${countyName}, ${stateName}</li>`;
+            });
+            
+            html += '</ul>';
+            selectionInfo.innerHTML = html;
+        }
+        
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = type;
+        }
+    </script>
 </body>
 </html>
