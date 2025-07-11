@@ -103,13 +103,35 @@ function exportExcel() {
 
 document.getElementById('geojson-upload').addEventListener('change', e => {
   const file = e.target.files[0];
-  if (file) loadGeoJSON(file);
+  if (!file) return;
+
+  if (file.type !== "application/json" && !file.name.endsWith(".geojson")) {
+    alert("Invalid file. Please upload a valid GeoJSON file.");
+    e.target.value = ""; // clear input
+    return;
+  }
+
+  loadGeoJSON(file);
 });
 
 document.getElementById('excel-upload').addEventListener('change', e => {
   const file = e.target.files[0];
-  if (file) loadExcel(file);
+  if (!file) return;
+
+  const validTypes = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel"
+  ];
+
+  if (!validTypes.includes(file.type) && !file.name.endsWith(".xlsx")) {
+    alert("Invalid file. Please upload a valid Excel (.xlsx) file.");
+    e.target.value = ""; // clear input
+    return;
+  }
+
+  loadExcel(file);
 });
+
 
 document.getElementById('name-input').addEventListener('input', e => {
   currentName = e.target.value.trim();
