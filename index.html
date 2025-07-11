@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>U.S. County Selection Tool</title>
+    <title>U.S. County Selection Tool - Shapefile Upload</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
         body {
@@ -65,32 +65,64 @@
         .loading.active {
             display: block;
         }
+        .file-list {
+            margin: 10px 0;
+            padding: 0;
+            list-style: none;
+        }
+        .file-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        #drop-zone {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+        #drop-zone.active {
+            border-color: #3498db;
+            background-color: #f0f8ff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>U.S. County Selection Tool</h1>
+        <h1>U.S. County Selection Tool - Shapefile Upload</h1>
         
         <div class="instructions">
             <h3>Instructions:</h3>
             <ol>
                 <li>Obtain a U.S. county shapefile from the <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html" target="_blank">U.S. Census Bureau</a></li>
-                <li>Convert it to GeoJSON using <a href="https://mapshaper.org/" target="_blank">mapshaper.org</a></li>
-                <li>Upload the GeoJSON file below</li>
+                <li>Extract the entire shapefile folder (should contain .shp, .shx, .dbf at minimum)</li>
+                <li>Drag and drop the entire folder or select all files below</li>
                 <li>Interact with the map to select counties</li>
             </ol>
-            <p><strong>Note:</strong> Large files may take a moment to process.</p>
+            <p><strong>Note:</strong> Processing time depends on file size (see estimates below).</p>
         </div>
         
         <div class="upload-section">
-            <h2>Upload Your County GeoJSON File</h2>
-            <div class="file-input-wrapper">
-                <input type="file" id="geojson-file" accept=".geojson,.json">
+            <h2>Upload Your Shapefile</h2>
+            <div id="drop-zone">
+                <p>Drag and drop your entire shapefile folder here</p>
+                <p>or</p>
+                <div class="file-input-wrapper">
+                    <input type="file" id="shapefile-upload" multiple webkitdirectory directory>
+                </div>
             </div>
-            <button id="upload-btn">Upload and Display</button>
+            <button id="upload-btn">Process Shapefile</button>
             <div id="loading" class="loading">
-                <p>Processing file... This may take a moment for large files.</p>
+                <p id="loading-text">Processing files...</p>
+                <div id="progress-bar" style="width: 100%; background: #ddd; height: 20px; margin-top: 10px;">
+                    <div id="progress" style="width: 0%; height: 100%; background: #3498db;"></div>
+                </div>
             </div>
+            <div id="file-list-container" style="display: none;">
+                <h4>Files detected:</h4>
+                <ul class="file-list" id="file-list"></ul>
+            </div>
+            <div id="time-estimate" style="margin-top: 10px;"></div>
             <div id="message"></div>
         </div>
         
@@ -100,6 +132,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/shpjs@4.0.2/dist/shp.js"></script>
     <script>
         // Initialize map
         const map = L.map('map').setView([39.8283, -98.5795], 4);
@@ -108,75 +141,266 @@
         }).addTo(map);
 
         // UI elements
-        const fileInput = document.getElementById('geojson-file');
+        const fileInput = document.getElementById('shapefile-upload');
         const uploadBtn = document.getElementById('upload-btn');
         const messageDiv = document.getElementById('message');
         const loadingDiv = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+        const progressBar = document.getElementById('progress');
         const selectionInfo = document.getElementById('selection-info');
+        const dropZone = document.getElementById('drop-zone');
+        const fileListContainer = document.getElementById('file-list-container');
+        const fileList = document.getElementById('file-list');
+        const timeEstimate = document.getElementById('time-estimate');
         
         let geoJsonLayer = null;
         let selectedCounties = [];
+        let shapefileFiles = [];
 
-        uploadBtn.addEventListener('click', handleFileUpload);
+        // Set up drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('active');
+        });
 
-        function handleFileUpload() {
-            const file = fileInput.files[0];
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('active');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
             
-            if (!file) {
-                showMessage('Please select a GeoJSON file first.', 'error');
+            const items = e.dataTransfer.items;
+            const files = [];
+            
+            // Handle directory drop
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i].webkitGetAsEntry();
+                if (item) {
+                    traverseFileTree(item, files);
+                }
+            }
+            
+            // Handle direct file drop
+            if (files.length === 0 && e.dataTransfer.files.length > 0) {
+                Array.from(e.dataTransfer.files).forEach(file => {
+                    files.push(file);
+                });
+            }
+            
+            handleFiles(files);
+        });
+
+        // Helper function to traverse directory structure
+        function traverseFileTree(item, files, path = '') {
+            if (item.isFile) {
+                item.file((file) => {
+                    file.filepath = path + file.name; // preserve relative path
+                    files.push(file);
+                });
+            } else if (item.isDirectory) {
+                const dirReader = item.createReader();
+                dirReader.readEntries((entries) => {
+                    for (let i = 0; i < entries.length; i++) {
+                        traverseFileTree(entries[i], files, path + item.name + '/');
+                    }
+                });
+            }
+        }
+
+        // Handle file input change
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(Array.from(e.target.files));
+        });
+
+        // Process the files
+        function handleFiles(files) {
+            shapefileFiles = files.filter(file => {
+                const ext = file.name.split('.').pop().toLowerCase();
+                return ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.xml'].includes('.' + ext);
+            });
+            
+            if (shapefileFiles.length === 0) {
+                showMessage('No valid shapefile components found. Please include .shp, .shx, and .dbf at minimum.', 'error');
                 return;
             }
             
-            if (!file.name.endsWith('.geojson') && !file.name.endsWith('.json')) {
-                showMessage('Please upload a valid GeoJSON file (.geojson or .json extension).', 'error');
+            // Display file list
+            fileList.innerHTML = '';
+            shapefileFiles.forEach(file => {
+                const li = document.createElement('li');
+                li.textContent = file.name + ` (${formatFileSize(file.size)})`;
+                fileList.appendChild(li);
+            });
+            fileListContainer.style.display = 'block';
+            
+            // Calculate and show time estimate
+            const totalSize = shapefileFiles.reduce((sum, file) => sum + file.size, 0);
+            showTimeEstimate(totalSize);
+        }
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Show time estimate based on file size
+        function showTimeEstimate(totalSize) {
+            // Rough estimates based on testing:
+            // - 1MB ~ 1-2 seconds
+            // - 10MB ~ 5-10 seconds
+            // - 50MB ~ 20-40 seconds
+            // - 100MB ~ 40-80 seconds
+            
+            const sizeMB = totalSize / (1024 * 1024);
+            let estimate;
+            
+            if (sizeMB < 1) {
+                estimate = '1-3 seconds';
+            } else if (sizeMB < 5) {
+                estimate = '3-8 seconds';
+            } else if (sizeMB < 20) {
+                estimate = '8-20 seconds';
+            } else if (sizeMB < 50) {
+                estimate = '20-40 seconds';
+            } else if (sizeMB < 100) {
+                estimate = '40-80 seconds';
+            } else {
+                estimate = '1-3 minutes';
+            }
+            
+            timeEstimate.innerHTML = `<strong>Estimated processing time:</strong> ${estimate} (for ${formatFileSize(totalSize)})`;
+        }
+
+        // Handle upload button click
+        uploadBtn.addEventListener('click', async function() {
+            if (shapefileFiles.length === 0) {
+                showMessage('Please select shapefile files first.', 'error');
+                return;
+            }
+            
+            // Find the .shp file
+            const shpFile = shapefileFiles.find(f => f.name.toLowerCase().endsWith('.shp'));
+            if (!shpFile) {
+                showMessage('Could not find .shp file in selection.', 'error');
                 return;
             }
             
             loadingDiv.classList.add('active');
+            loadingText.textContent = 'Processing files...';
+            progressBar.style.width = '0%';
             messageDiv.textContent = '';
             
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                try {
-                    const geojsonData = JSON.parse(e.target.result);
-                    
-                    // Validate GeoJSON structure
-                    if (!geojsonData.type || !geojsonData.features) {
-                        throw new Error('Invalid GeoJSON structure. The file should contain FeatureCollection.');
-                    }
-                    
-                    // Clear previous layer if exists
-                    if (geoJsonLayer) {
-                        map.removeLayer(geoJsonLayer);
-                        selectedCounties = [];
-                        updateSelectionInfo();
-                    }
-                    
-                    // Process and display the GeoJSON
-                    processGeoJSON(geojsonData);
-                    
-                    showMessage('File successfully loaded and displayed.', 'success');
-                } catch (error) {
-                    showMessage(`Error processing file: ${error.message}`, 'error');
-                    console.error(error);
-                } finally {
-                    loadingDiv.classList.remove('active');
+            try {
+                // Create a virtual file structure for shapefile.js
+                const virtualFiles = {};
+                shapefileFiles.forEach(file => {
+                    virtualFiles[file.name] = file;
+                });
+                
+                // Process with shapefile.js
+                const geojson = await processShapefile(shpFile, virtualFiles);
+                
+                // Clear previous layer if exists
+                if (geoJsonLayer) {
+                    map.removeLayer(geoJsonLayer);
+                    selectedCounties = [];
+                    updateSelectionInfo();
                 }
-            };
-            
-            reader.onerror = function() {
-                showMessage('Error reading file. Please try again.', 'error');
+                
+                // Process the converted GeoJSON
+                processGeoJSON(geojson);
+                
+                showMessage('Shapefile successfully loaded and displayed.', 'success');
+            } catch (error) {
+                showMessage(`Error processing shapefile: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
                 loadingDiv.classList.remove('active');
-            };
-            
-            reader.readAsText(file);
+            }
+        });
+
+        // Process shapefile with progress updates
+        async function processShapefile(shpFile, virtualFiles) {
+            return new Promise((resolve, reject) => {
+                // Create file readers
+                const readers = {};
+                for (const filename in virtualFiles) {
+                    readers[filename] = new FileReader();
+                }
+                
+                // Read the .shp file first
+                readers[shpFile.name].onload = function(e) {
+                    const shpBuffer = e.target.result;
+                    
+                    // Find and read the .dbf file
+                    const dbfFilename = shpFile.name.replace(/\.shp$/i, '.dbf');
+                    const dbfFile = virtualFiles[dbfFilename];
+                    
+                    if (!dbfFile) {
+                        reject(new Error(`Could not find matching .dbf file (looking for ${dbfFilename})`));
+                        return;
+                    }
+                    
+                    readers[dbfFilename].onload = function(e) {
+                        const dbfBuffer = e.target.result;
+                        
+                        // Optional: read .prj file if exists
+                        const prjFilename = shpFile.name.replace(/\.shp$/i, '.prj');
+                        const prjFile = virtualFiles[prjFilename];
+                        
+                        if (prjFile) {
+                            readers[prjFilename].onload = function(e) {
+                                const prjText = e.target.result;
+                                processData(shpBuffer, dbfBuffer, prjText);
+                            };
+                            readers[prjFilename].readAsText(prjFile);
+                        } else {
+                            processData(shpBuffer, dbfBuffer);
+                        }
+                    };
+                    
+                    readers[dbfFilename].readAsArrayBuffer(dbfFile);
+                };
+                
+                readers[shpFile.name].readAsArrayBuffer(shpFile);
+                
+                function processData(shpBuffer, dbfBuffer, prjText) {
+                    try {
+                        // Use shapefile.js to parse
+                        const geojson = shp.combine([
+                            shp.parseShp(shpBuffer, prjText),
+                            shp.parseDbf(dbfBuffer)
+                        ]);
+                        
+                        resolve(geojson);
+                    } catch (error) {
+                        reject(error);
+                    }
+                }
+                
+                // Update progress
+                let filesProcessed = 0;
+                const totalFiles = Object.keys(readers).length;
+                
+                for (const filename in readers) {
+                    readers[filename].onloadend = function() {
+                        filesProcessed++;
+                        const progress = (filesProcessed / totalFiles) * 100;
+                        progressBar.style.width = `${progress}%`;
+                        loadingText.textContent = `Processing files... (${filesProcessed}/${totalFiles})`;
+                    };
+                }
+            });
         }
         
+        // The rest of your existing GeoJSON processing code remains the same
         function processGeoJSON(geojsonData) {
-            // First log the properties to see what's available
-            console.log("Sample feature properties:", geojsonData.features[0].properties);
-            
             // Style function for the GeoJSON
             function style(feature) {
                 return {
@@ -202,11 +426,9 @@
                 
                 layer.bringToFront();
                 
-                // Show county and state name in info panel
-                const properties = layer.feature.properties;
-                const countyName = properties.NAME || properties.name || 'Unnamed County';
-                const stateName = getStateName(properties);
-                selectionInfo.innerHTML = `<strong>Hovering:</strong> ${countyName}, ${stateName}`;
+                // Show county name in info panel
+                const countyName = layer.feature.properties.NAME || layer.feature.properties.name || 'Unnamed County';
+                selectionInfo.innerHTML = `<strong>Hovering:</strong> ${countyName}`;
             }
             
             function resetHighlight(e) {
@@ -215,17 +437,12 @@
             }
             
             function onEachFeature(feature, layer) {
-                // Get county and state names from properties
-                const properties = feature.properties;
-                const countyName = properties.NAME || properties.name || 'Unnamed County';
-                const stateName = getStateName(properties);
-                const fullName = `${countyName}, ${stateName}`;
+                // Get county name from properties
+                const countyName = feature.properties.NAME || feature.properties.name || 'Unnamed County';
+                const stateName = feature.properties.STATE_NAME || feature.properties.state_name || 'Unknown State';
                 
-                // Store the full name in the feature for later use
-                feature.properties._fullName = fullName;
-                
-                // Bind tooltip with county and state
-                layer.bindTooltip(fullName);
+                // Bind tooltip
+                layer.bindTooltip(`${countyName}, ${stateName}`);
                 
                 // Add click event
                 layer.on({
@@ -266,63 +483,6 @@
             map.fitBounds(geoJsonLayer.getBounds());
         }
         
-        // Helper function to get state name from properties
-        function getStateName(properties) {
-            // Try different possible property names for state
-            if (properties.STATE_NAME) return properties.STATE_NAME;
-            if (properties.state_name) return properties.state_name;
-            if (properties.STUSPS) return getStateNameFromAbbr(properties.STUSPS);
-            if (properties.STATEFP) return getStateNameFromFips(properties.STATEFP);
-            
-            return 'Unknown State';
-        }
-        
-        // Helper function to get state name from FIPS code
-        function getStateNameFromFips(fipsCode) {
-            const fipsToState = {
-                '01': 'Alabama', '02': 'Alaska', '04': 'Arizona', '05': 'Arkansas',
-                '06': 'California', '08': 'Colorado', '09': 'Connecticut', '10': 'Delaware',
-                '11': 'District of Columbia', '12': 'Florida', '13': 'Georgia', '15': 'Hawaii',
-                '16': 'Idaho', '17': 'Illinois', '18': 'Indiana', '19': 'Iowa',
-                '20': 'Kansas', '21': 'Kentucky', '22': 'Louisiana', '23': 'Maine',
-                '24': 'Maryland', '25': 'Massachusetts', '26': 'Michigan', '27': 'Minnesota',
-                '28': 'Mississippi', '29': 'Missouri', '30': 'Montana', '31': 'Nebraska',
-                '32': 'Nevada', '33': 'New Hampshire', '34': 'New Jersey', '35': 'New Mexico',
-                '36': 'New York', '37': 'North Carolina', '38': 'North Dakota', '39': 'Ohio',
-                '40': 'Oklahoma', '41': 'Oregon', '42': 'Pennsylvania', '44': 'Rhode Island',
-                '45': 'South Carolina', '46': 'South Dakota', '47': 'Tennessee', '48': 'Texas',
-                '49': 'Utah', '50': 'Vermont', '51': 'Virginia', '53': 'Washington',
-                '54': 'West Virginia', '55': 'Wisconsin', '56': 'Wyoming',
-                '60': 'American Samoa', '66': 'Guam', '69': 'Northern Mariana Islands',
-                '72': 'Puerto Rico', '78': 'Virgin Islands'
-            };
-            
-            return fipsToState[fipsCode] || 'Unknown State';
-        }
-        
-        // Helper function to get state name from abbreviation
-        function getStateNameFromAbbr(abbr) {
-            const abbrToState = {
-                'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas',
-                'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware',
-                'DC': 'District of Columbia', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii',
-                'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
-                'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine',
-                'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
-                'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska',
-                'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico',
-                'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
-                'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island',
-                'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas',
-                'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington',
-                'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
-                'AS': 'American Samoa', 'GU': 'Guam', 'MP': 'Northern Mariana Islands',
-                'PR': 'Puerto Rico', 'VI': 'Virgin Islands'
-            };
-            
-            return abbrToState[abbr] || 'Unknown State';
-        }
-        
         function updateSelectionInfo() {
             if (selectedCounties.length === 0) {
                 selectionInfo.innerHTML = '<strong>No counties selected</strong>';
@@ -332,7 +492,9 @@
             let html = `<strong>Selected Counties (${selectedCounties.length}):</strong><ul>`;
             
             selectedCounties.forEach(feature => {
-                html += `<li>${feature.properties._fullName || 'Unknown County'}</li>`;
+                const countyName = feature.properties.NAME || feature.properties.name || 'Unnamed County';
+                const stateName = feature.properties.STATE_NAME || feature.properties.state_name || 'Unknown State';
+                html += `<li>${countyName}, ${stateName}</li>`;
             });
             
             html += '</ul>';
