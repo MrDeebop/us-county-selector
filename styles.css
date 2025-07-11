@@ -1,143 +1,26 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-    line-height: 1.6;
+/* Add these new styles to your existing CSS */
+
+/* Group color indicators */
+.group-color {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
 }
 
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+/* Excel upload button styling */
+#upload-excel-btn {
+    background: #2ecc71;
+    margin-left: 10px;
 }
 
-.upload-section, .group-section {
-    background: #f5f5f5;
-    padding: 20px;
-    border-radius: 8px;
+#upload-excel-btn:hover {
+    background: #27ae60;
 }
 
-.map-container {
-    height: 600px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    grid-column: 1 / -1;
-}
-
-.instructions {
-    background: #e7f4ff;
-    padding: 15px;
-    border-left: 4px solid #3498db;
-    margin-bottom: 20px;
-    border-radius: 4px;
-    grid-column: 1 / -1;
-}
-
-button {
-    background: #3498db;
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    margin: 5px 0;
-}
-
-button:hover {
-    background: #2980b9;
-}
-
-.error {
-    color: #e74c3c;
-    margin-top: 10px;
-}
-
-.success {
-    color: #27ae60;
-    margin-top: 10px;
-}
-
-.loading {
-    display: none;
-    margin: 10px 0;
-}
-
-.group-list, .county-list {
-    max-height: 300px;
-    overflow-y: auto;
-    border: 1px solid #ddd;
-    padding: 10px;
-    border-radius: 4px;
-    background: white;
-    margin-top: 10px;
-}
-
-.group-item {
-    padding: 8px;
-    margin: 5px 0;
-    background: #e8f4fc;
-    border-radius: 4px;
-    display: flex;
-    justify-content: space-between;
-}
-
-.county-item {
-    padding: 5px;
-    margin: 3px 0;
-    background: #f9f9f9;
-    border-radius: 3px;
-    font-size: 14px;
-}
-
-.group-controls {
-    display: flex;
-    gap: 10px;
-    margin-top: 15px;
-}
-
-input[type="text"] {
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-.export-section {
-    margin-top: 20px;
-    padding: 15px;
-    background: #e8f8f0;
-    border-radius: 8px;
-}
-
-#drop-zone {
-    border: 2px dashed #ccc;
-    padding: 20px;
-    text-align: center;
-    margin: 10px 0;
-    border-radius: 8px;
-}
-
-#drop-zone.active {
-    border-color: #3498db;
-    background-color: #f0f8ff;
-}
-
-.progress-bar {
-    width: 100%;
-    background: #ddd;
-    height: 20px;
-    margin-top: 10px;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.progress {
-    height: 100%;
-    background: #3498db;
-    width: 0%;
-    transition: width 0.3s;
+/* Style for counties in groups */
+.county-in-group {
+    opacity: 0.7;
 }
