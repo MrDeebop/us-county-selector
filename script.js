@@ -221,65 +221,72 @@ function processExcelData(data) {
         }
         
         // Find the actual county feature from the loaded shapefile
-        let actualCountyFeature = null;
-        let actualStateName = stateName;
+        let matchedCountyFeature = null;
+        let matchedStateName = stateName;
         
         if (geoJsonLayer) {
             geoJsonLayer.eachLayer(layer => {
                 const feature = layer.feature;
-                const featureCountyName = feature.properties.NAME || feature.properties.name || '';
+                const featureCountyName = (feature.properties.NAME || feature.properties.name || '').toLowerCase();
                 const featureCountyId = getCountyId(feature);
                 const featureStateName = state.countyStateMap[featureCountyId] || 
                                        extractStateName(feature) || '';
                 
-                // Try to match county by name and state
-                if (featureCountyName.toLowerCase() === countyName.toLowerCase() &&
-                    (featureStateName.toLowerCase() === stateName.toLowerCase() ||
-                     getStateAbbreviationFromName(featureStateName) === getStateAbbreviationFromName(stateName) ||
-                     getStateNameFromAbbreviation(featureStateName) === stateName ||
-                     getStateNameFromAbbreviation(stateName) === featureStateName)) {
-                    actualCountyFeature = feature;
-                    actualStateName = featureStateName;
+                // Try multiple matching strategies
+                const excelCountyName = countyName.toLowerCase();
+                const excelStateName = stateName.toLowerCase();
+                const featureStateNameLower = featureStateName.toLowerCase();
+                
+                // Check if county names match
+                const countyMatches = featureCountyName === excelCountyName ||
+                                    featureCountyName.includes(excelCountyName) ||
+                                    excelCountyName.includes(featureCountyName);
+                
+                // Check if states match (try multiple formats)
+                const stateMatches = featureStateNameLower === excelStateName ||
+                                   getStateAbbreviationFromName(featureStateName)?.toLowerCase() === excelStateName ||
+                                   getStateAbbreviationFromName(stateName)?.toLowerCase() === featureStateNameLower ||
+                                   getStateNameFromAbbreviation(featureStateName)?.toLowerCase() === excelStateName ||
+                                   getStateNameFromAbbreviation(stateName)?.toLowerCase() === featureStateNameLower;
+                
+                if (countyMatches && stateMatches) {
+                    matchedCountyFeature = feature;
+                    matchedStateName = featureStateName;
+                    
+                    // Immediately update the county-group mapping with the actual feature's ID
+                    const actualCountyId = getCountyId(feature);
+                    state.countyGroupMap[actualCountyId] = groupsMap[groupName].colorClass;
                 }
             });
         }
         
-        // If we couldn't find the actual feature, create a mock one
-        if (!actualCountyFeature) {
-            actualCountyFeature = {
-                properties: {
-                    NAME: countyName,
-                    STATEFP: getStateAbbreviationFromName(stateName) || stateName,
-                    STATE: getStateAbbreviationFromName(stateName) || stateName,
-                    STATE_NAME: stateName
-                }
-            };
-        }
+        // Use the matched feature if found, otherwise create a mock one
+        const countyFeature = matchedCountyFeature || {
+            properties: {
+                NAME: countyName,
+                STATEFP: getStateAbbreviationFromName(stateName) || stateName,
+                STATE: getStateAbbreviationFromName(stateName) || stateName,
+                STATE_NAME: stateName
+            }
+        };
         
         const countyData = {
-            countyFeature: actualCountyFeature,
-            stateName: actualStateName
+            countyFeature: countyFeature,
+            stateName: matchedStateName
         };
         
         groupsMap[groupName].counties.push(countyData);
     });
     
-    // Add groups to state and update county-group mapping
+    // Add groups to state
     Object.values(groupsMap).forEach((group, index) => {
         const groupId = Date.now().toString() + index;
         state.groups[groupId] = group;
-        
-        // Update county-group mapping for each county in the group
-        group.counties.forEach(countyData => {
-            const countyId = getCountyId(countyData.countyFeature);
-            state.countyGroupMap[countyId] = group.colorClass;
-        });
     });
     
     // Use the existing refreshAllMapStyling function to update the map
     refreshAllMapStyling();
 }
-
 async function handleFileUpload() {
     const files = Array.from(elements.fileInput.files);
     if (files.length === 0) {
