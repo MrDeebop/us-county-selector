@@ -21,10 +21,12 @@ const state = {
     selectedCounties: [],
     groups: {},
     countyStateMap: {},
-    countyGroupMap: {}
+    countyGroupMap: {},
+    // ADD THESE NEW PROPERTIES:
     isDragging: false,
     dragStarted: false,
-    dragSelectedCounties: new Set()
+    dragSelectedCounties: new Set(),
+    ctrlPressed: false
 };
 
 // DOM elements
@@ -95,22 +97,45 @@ function setupEventListeners() {
         document.getElementById('excel-drop-zone').classList.remove('active');
         handleDroppedExcelFile(e.dataTransfer.files);
     });
-    // Prevent default map dragging when drag selecting
-    elements.map.getContainer().addEventListener('mousedown', (e) => {
-        if (e.target.classList.contains('leaflet-interactive') || 
-            e.target.tagName === 'path') {
-            // This is a county, prepare for potential drag selection
-            state.dragStarted = true;
+    
+    // Keyboard event listeners for Ctrl key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Control' || e.ctrlKey) {
+            state.ctrlPressed = true;
+            // Change cursor to indicate drag selection mode
+            elements.map.getContainer().style.cursor = 'crosshair';
         }
     });
-    // Global mouse events for drag selection
+    
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'Control' || !e.ctrlKey) {
+            state.ctrlPressed = false;
+            // Reset cursor
+            elements.map.getContainer().style.cursor = '';
+            // End any active drag selection
+            if (state.isDragging) {
+                endDragSelection();
+            }
+        }
+    });
+    
+    // Global mouse events for drag selection (only when Ctrl is pressed)
     document.addEventListener('mouseup', (e) => {
-        if (state.isDragging) {
+        if (state.isDragging && state.ctrlPressed) {
             endDragSelection();
         }
     });
     
     document.addEventListener('mouseleave', (e) => {
+        if (state.isDragging) {
+            endDragSelection();
+        }
+    });
+    
+    // Handle window blur to reset Ctrl state
+    window.addEventListener('blur', () => {
+        state.ctrlPressed = false;
+        elements.map.getContainer().style.cursor = '';
         if (state.isDragging) {
             endDragSelection();
         }
@@ -592,7 +617,7 @@ function displayGeoJSON(geojson) {
                 }
             },
             mouseover: (e) => {
-                if (state.isDragging) {
+                if (state.isDragging && state.ctrlPressed) {
                     // Add county to drag selection if not already selected
                     const countyId = getCountyId(feature);
                     if (!state.dragSelectedCounties.has(countyId)) {
@@ -609,12 +634,16 @@ function displayGeoJSON(geojson) {
                 }
             },
             mousedown: (e) => {
-                e.originalEvent.preventDefault();
-                startDragSelection(feature, layer);
+                if (state.ctrlPressed) {
+                    e.originalEvent.preventDefault();
+                    startDragSelection(feature, layer);
+                }
             },
             mouseup: (e) => {
-                e.originalEvent.preventDefault();
-                endDragSelection();
+                if (state.ctrlPressed && state.isDragging) {
+                    e.originalEvent.preventDefault();
+                    endDragSelection();
+                }
             }
         });
     }
@@ -679,6 +708,8 @@ function toggleCountySelection(feature, layer) {
 }
 
 function startDragSelection(feature, layer) {
+    if (!state.ctrlPressed) return;
+    
     state.isDragging = true;
     state.dragStarted = true;
     state.dragSelectedCounties.clear();
@@ -764,7 +795,7 @@ function clearSelection() {
     }
     
     state.selectedCounties = [];
-    state.dragSelectedCounties.clear(); // ADD THIS LINE
+    state.dragSelectedCounties.clear();
     updateSelectedCountiesDisplay();
 }
 
