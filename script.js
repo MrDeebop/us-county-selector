@@ -132,6 +132,9 @@ async function processExcelFile(file) {
         
         // Update the display
         renderGroups();
+
+        //refresh map styling
+        refreshMapStyling();
         
         // Update map styling if geoJsonLayer exists
         if (geoJsonLayer) {
