@@ -102,6 +102,9 @@ async function handleExcelUpload() {
         return;
     }
     await processExcelFile(fileInput.files[0]);
+    
+    // Refresh the map styling after processing
+    refreshMapStyling();
 }
 
 async function handleDroppedExcelFile(files) {
@@ -191,6 +194,10 @@ function processExcelData(data) {
     // Skip header row
     const rows = data.slice(1);
     
+    // Clear existing groups
+    state.groups = {};
+    state.countyGroupMap = {};
+    
     // Group rows by group name
     const groupsMap = {};
     rows.forEach(row => {
@@ -199,7 +206,7 @@ function processExcelData(data) {
         const groupName = row[0];
         const countyName = row[1];
         const stateName = row[2];
-        const colorName = row[3].toLowerCase(); // Convert to lowercase for consistent matching
+        const colorName = row[3].toLowerCase();
         
         if (!groupsMap[groupName]) {
             // Find the matching color class
@@ -227,27 +234,43 @@ function processExcelData(data) {
         const feature = {
             properties: {
                 NAME: countyName,
-                // Try to match state properties that might be in your shapefile
                 STATEFP: getStateAbbreviationFromName(stateName) || stateName,
                 STATE: getStateAbbreviationFromName(stateName) || stateName,
                 STATE_NAME: stateName
             }
         };
         
-        groupsMap[groupName].counties.push({
+        const countyData = {
             countyFeature: feature,
             stateName: stateName
-        });
+        };
+        
+        groupsMap[groupName].counties.push(countyData);
         
         // Add to countyGroupMap - use the same ID generation as in getCountyId()
-        const countyId = `${countyName}-${getStateAbbreviationFromName(stateName) || stateName}`.toLowerCase();
+        const countyId = getCountyId(feature);
         state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
     });
     
-    // Add to state.groups
+    // Add to state.groups and update map styling
     Object.values(groupsMap).forEach((group, index) => {
         const groupId = Date.now().toString() + index;
         state.groups[groupId] = group;
+        
+        // Update map styling for each county in this group
+        if (geoJsonLayer) {
+            group.counties.forEach(item => {
+                const countyId = getCountyId(item.countyFeature);
+                geoJsonLayer.eachLayer(layer => {
+                    if (getCountyId(layer.feature) === countyId) {
+                        layer.setStyle({
+                            fillColor: getColorFromClass(group.colorClass),
+                            weight: 1
+                        });
+                    }
+                });
+            });
+        }
     });
 }
 
@@ -366,12 +389,20 @@ function refreshMapStyling() {
         if (colorClass) {
             layer.setStyle({
                 fillColor: getColorFromClass(colorClass),
-                weight: 1
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
             });
         } else {
             layer.setStyle({
                 fillColor: '#3388ff',
-                weight: 1
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
             });
         }
     });
