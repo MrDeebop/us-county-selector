@@ -23,14 +23,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const clearAllBtn = document.getElementById('clear-all');
     const assignmentsBody = document.getElementById('assignments-body');
     
-    // Initialize map
+    // Initialize map with better default view
     function initMap() {
         map = L.map('map').setView([39.8283, -98.5795], 4);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
         
-        // Initialize the draw control (but don't add it yet)
+        // Initialize the draw control
         drawControl = new L.Control.Draw({
             draw: {
                 polygon: {
@@ -53,29 +53,42 @@ document.addEventListener('DOMContentLoaded', function() {
         
         drawnItems.addTo(map);
         
-        // Handle drawing events
         map.on(L.Draw.Event.CREATED, function(e) {
             if (!isDrawing) return;
             
             const layer = e.layer;
             drawnItems.addLayer(layer);
-            
-            // Find counties within the polygon
             findCountiesInPolygon(layer);
         });
     }
     
-    // Initialize the application
     initMap();
     
-    // Handle GeoJSON upload
+    // Handle GeoJSON upload with progress
     geojsonUpload.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
         
+        showStatus('Loading GeoJSON (0%)...', 'info');
+        
+        // Read with progress tracking
         const reader = new FileReader();
+        let lastProgress = 0;
+        
+        reader.onprogress = function(e) {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                // Only update if progress changed significantly
+                if (percent >= lastProgress + 5 || percent === 100) {
+                    showStatus(`Loading GeoJSON (${percent}%)...`, 'info');
+                    lastProgress = percent;
+                }
+            }
+        };
+        
         reader.onload = function(e) {
             try {
+                // Parse the GeoJSON
                 countyData = JSON.parse(e.target.result);
                 
                 // Clear previous data
@@ -83,52 +96,94 @@ document.addEventListener('DOMContentLoaded', function() {
                     map.removeLayer(countyLayer);
                 }
                 
-                // Add new county data to map
-                countyLayer = L.geoJSON(countyData, {
-                    style: function(feature) {
-                        return {
-                            fillColor: '#f8f9fa',
-                            weight: 1,
-                            opacity: 1,
-                            color: '#6c757d',
-                            fillOpacity: 0.7
-                        };
-                    },
-                    onEachFeature: function(feature, layer) {
-                        // Store the original feature for later reference
-                        layer.feature = feature;
+                showStatus('Rendering counties...', 'info');
+                
+                // Process GeoJSON in chunks to avoid blocking UI
+                setTimeout(() => {
+                    try {
+                        countyLayer = L.geoJSON(countyData, {
+                            style: getDefaultCountyStyle,
+                            onEachFeature: onEachCountyFeature
+                        }).addTo(map);
                         
-                        // Show county name on hover
-                        if (feature.properties && feature.properties.NAME) {
-                            layer.bindTooltip(feature.properties.NAME);
-                        }
+                        // Fit map to the counties
+                        map.fitBounds(countyLayer.getBounds());
+                        
+                        showStatus('GeoJSON loaded successfully!', 'success');
+                        assignmentSection.style.display = 'block';
+                        assignments = {};
+                        updateAssignmentsTable();
+                    } catch (renderError) {
+                        showStatus('Error rendering GeoJSON: ' + renderError.message, 'error');
+                        console.error(renderError);
                     }
-                }).addTo(map);
-                
-                // Fit map to the counties
-                map.fitBounds(countyLayer.getBounds());
-                
-                // Show success message
-                showStatus('GeoJSON loaded successfully!', 'success');
-                
-                // Show the assignment section
-                assignmentSection.style.display = 'block';
-                
-                // Initialize assignments
-                assignments = {};
-                updateAssignmentsTable();
-            } catch (error) {
-                showStatus('Error parsing GeoJSON file: ' + error.message, 'error');
-                console.error(error);
+                }, 100);
+            } catch (parseError) {
+                showStatus('Error parsing GeoJSON: ' + parseError.message, 'error');
+                console.error(parseError);
             }
         };
+        
         reader.onerror = function() {
             showStatus('Error reading file', 'error');
         };
+        
         reader.readAsText(file);
     });
     
-    // Start drawing button
+    // Default county style
+    function getDefaultCountyStyle(feature) {
+        return {
+            fillColor: '#f8f9fa',
+            weight: 1,
+            opacity: 1,
+            color: '#6c757d',
+            fillOpacity: 0.7
+        };
+    }
+    
+    // Style for assigned counties
+    function getAssignedCountyStyle(groupName) {
+        return {
+            fillColor: getColorForGroup(groupName),
+            weight: 1,
+            opacity: 1,
+            color: '#6c757d',
+            fillOpacity: 0.7
+        };
+    }
+    
+    // Process each county feature
+    function onEachCountyFeature(feature, layer) {
+        // Store the original feature
+        layer.feature = feature;
+        
+        // Show county name on hover
+        const countyName = feature.properties?.NAME || 
+                          feature.properties?.name || 
+                          feature.properties?.NAMELSAD || 
+                          'Unnamed County';
+        layer.bindTooltip(countyName);
+        
+        // Check if this county is already assigned
+        for (const [groupName, counties] of Object.entries(assignments)) {
+            const countyId = getCountyId(feature);
+            if (counties.includes(countyId)) {
+                layer.setStyle(getAssignedCountyStyle(groupName));
+                break;
+            }
+        }
+    }
+    
+    // Get unique ID for a county
+    function getCountyId(feature) {
+        return feature.properties.GEOID || 
+               feature.properties.FIPS || 
+               feature.properties.NAME || 
+               JSON.stringify(feature.geometry.coordinates);
+    }
+    
+    // Start drawing mode
     startDrawingBtn.addEventListener('click', function() {
         const groupName = groupNameInput.value.trim();
         if (!groupName) {
@@ -144,10 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentGroupName = groupName;
         isDrawing = true;
         
-        // Add draw control to map
         map.addControl(drawControl);
-        
-        // Update button states
         startDrawingBtn.disabled = true;
         endDrawingBtn.disabled = false;
         groupNameInput.disabled = true;
@@ -155,17 +207,12 @@ document.addEventListener('DOMContentLoaded', function() {
         showStatus(`Drawing mode active for group "${groupName}". Draw a polygon around counties to assign.`, 'info');
     });
     
-    // End drawing button
+    // End drawing mode
     endDrawingBtn.addEventListener('click', function() {
         isDrawing = false;
-        
-        // Remove draw control from map
         map.removeControl(drawControl);
-        
-        // Clear drawn items
         drawnItems.clearLayers();
         
-        // Update button states
         startDrawingBtn.disabled = false;
         endDrawingBtn.disabled = true;
         groupNameInput.disabled = false;
@@ -175,60 +222,48 @@ document.addEventListener('DOMContentLoaded', function() {
         updateAssignmentsTable();
     });
     
-    // Clear current drawing button
-    clearDrawingBtn.addEventListener('click', function() {
-        if (!isDrawing) return;
-        
-        drawnItems.clearLayers();
-        showStatus('Cleared current drawing', 'info');
-    });
-    
-    // Find counties within a drawn polygon
+    // Find counties within a polygon
     function findCountiesInPolygon(polygonLayer) {
         if (!countyLayer || !currentGroupName) return;
-        
-        // Get the polygon geometry
-        const polygon = polygonLayer.toGeoJSON();
         
         // Initialize group if it doesn't exist
         if (!assignments[currentGroupName]) {
             assignments[currentGroupName] = [];
         }
         
-        // Check each county to see if it's inside the polygon
+        // Get the polygon geometry
+        const polygon = polygonLayer.toGeoJSON();
+        
+        // Check each county
         countyLayer.eachLayer(function(countyLayer) {
             const county = countyLayer.feature;
-            const countyId = county.properties.GEOID || county.properties.FIPS || county.properties.NAME;
+            const countyId = getCountyId(county);
             
             // Skip if already assigned to this group
             if (assignments[currentGroupName].includes(countyId)) return;
             
             // Check if county is inside polygon
-            if (turf.booleanPointInPolygon(
-                turf.centerOfMass(county),
-                polygon
-            )) {
-                assignments[currentGroupName].push(countyId);
+            if (window.turf && window.turf.booleanPointInPolygon) {
+                try {
+                    const countyCenter = window.turf.centerOfMass(county);
+                    if (window.turf.booleanPointInPolygon(countyCenter, polygon)) {
+                        assignments[currentGroupName].push(countyId);
+                        countyLayer.setStyle(getAssignedCountyStyle(currentGroupName));
+                    }
+                } catch (turfError) {
+                    console.error('Turf.js error:', turfError);
+                }
+            } else {
+                // Fallback simple bounding box check if Turf.js isn't loaded
+                const countyBounds = countyLayer.getBounds();
+                const polygonBounds = polygonLayer.getBounds();
                 
-                // Highlight the county
-                countyLayer.setStyle({
-                    fillColor: getColorForGroup(currentGroupName),
-                    fillOpacity: 0.7
-                });
+                if (polygonBounds.contains(countyBounds.getCenter())) {
+                    assignments[currentGroupName].push(countyId);
+                    countyLayer.setStyle(getAssignedCountyStyle(currentGroupName));
+                }
             }
         });
-    }
-    
-    // Generate a color for a group based on its name
-    function getColorForGroup(groupName) {
-        // Simple hash function to generate consistent colors
-        let hash = 0;
-        for (let i = 0; i < groupName.length; i++) {
-            hash = groupName.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        
-        const hue = Math.abs(hash) % 360;
-        return `hsl(${hue}, 70%, 50%)`;
     }
     
     // Update the assignments table
@@ -238,81 +273,69 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const [groupName, counties] of Object.entries(assignments)) {
             const row = document.createElement('tr');
             
-            const nameCell = document.createElement('td');
-            nameCell.textContent = groupName;
+            row.innerHTML = `
+                <td>${groupName}</td>
+                <td>${counties.length}</td>
+                <td><button class="danger">Delete</button></td>
+            `;
             
-            const countCell = document.createElement('td');
-            countCell.textContent = counties.length;
-            
-            const actionsCell = document.createElement('td');
-            const deleteBtn = document.createElement('button');
-            deleteBtn.textContent = 'Delete';
-            deleteBtn.className = 'danger';
-            deleteBtn.addEventListener('click', function() {
+            row.querySelector('button').addEventListener('click', function() {
                 delete assignments[groupName];
                 updateCountyStyles();
                 updateAssignmentsTable();
             });
             
-            actionsCell.appendChild(deleteBtn);
-            
-            row.appendChild(nameCell);
-            row.appendChild(countCell);
-            row.appendChild(actionsCell);
-            
             assignmentsBody.appendChild(row);
         }
     }
     
-    // Update county styles based on assignments
+    // Update all county styles
     function updateCountyStyles() {
         if (!countyLayer) return;
         
-        // Reset all counties to default style
         countyLayer.eachLayer(function(layer) {
-            layer.setStyle({
-                fillColor: '#f8f9fa',
-                fillOpacity: 0.7
-            });
-        });
-        
-        // Apply group colors
-        for (const [groupName, counties] of Object.entries(assignments)) {
-            const color = getColorForGroup(groupName);
+            let isAssigned = false;
+            const countyId = getCountyId(layer.feature);
             
-            countyLayer.eachLayer(function(layer) {
-                const county = layer.feature;
-                const countyId = county.properties.GEOID || county.properties.FIPS || county.properties.NAME;
-                
+            // Check all assignments
+            for (const [groupName, counties] of Object.entries(assignments)) {
                 if (counties.includes(countyId)) {
-                    layer.setStyle({
-                        fillColor: color,
-                        fillOpacity: 0.7
-                    });
+                    layer.setStyle(getAssignedCountyStyle(groupName));
+                    isAssigned = true;
+                    break;
                 }
-            });
-        }
+            }
+            
+            if (!isAssigned) {
+                layer.setStyle(getDefaultCountyStyle());
+            }
+        });
     }
     
     // Export data to Excel
-    exportDataBtn.addEventListener('click', function() {
+    exportDataBtn.addEventListener('click', exportAssignments);
+    
+    function exportAssignments() {
         if (!countyData || Object.keys(assignments).length === 0) {
             showStatus('No assignments to export', 'error');
             return;
         }
         
-        // Prepare data for export
+        // Prepare data
         const exportData = [];
-        
-        // Create a map of county IDs to names for display
         const countyIdToName = {};
+        
+        // Create county name mapping
         countyLayer.eachLayer(function(layer) {
             const county = layer.feature;
-            const countyId = county.properties.GEOID || county.properties.FIPS || county.properties.NAME;
-            countyIdToName[countyId] = county.properties.NAME || countyId;
+            countyIdToName[getCountyId(county)] = 
+                county.properties?.NAME || 
+                county.properties?.name || 
+                county.properties?.NAMELSAD || 
+                getCountyId(county);
         });
         
-        // Create rows for each assignment
+        // Create export rows
         for (const [groupName, counties] of Object.entries(assignments)) {
             counties.forEach(countyId => {
                 exportData.push({
@@ -323,16 +346,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Create worksheet
+        // Create and download Excel file
         const ws = XLSX.utils.json_to_sheet(exportData);
-        
-        // Create workbook
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'County Assignments');
-        
-        // Export to file
         XLSX.writeFile(wb, 'county_assignments.xlsx');
-    });
+    }
     
     // Import data from Excel
     importButton.addEventListener('click', function() {
@@ -348,15 +367,11 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
-                
-                // Get first sheet
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
                 
-                // Reset assignments
                 assignments = {};
                 
-                // Process imported data
                 jsonData.forEach(row => {
                     const groupName = row['Group Name'];
                     const countyId = row['County ID'];
@@ -372,7 +387,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
                 
-                // Update display
                 updateCountyStyles();
                 updateAssignmentsTable();
                 showStatus('Assignments imported successfully!', 'success');
@@ -399,12 +413,20 @@ document.addEventListener('DOMContentLoaded', function() {
         geojsonStatus.innerHTML = `<div class="status-message ${type}">${message}</div>`;
     }
     
-    // Load Turf.js dynamically (for spatial operations)
-    function loadTurf() {
+    // Generate consistent color for a group
+    function getColorForGroup(groupName) {
+        let hash = 0;
+        for (let i = 0; i < groupName.length; i++) {
+            hash = groupName.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash) % 360;
+        return `hsl(${hue}, 70%, 50%)`;
+    }
+    
+    // Load Turf.js dynamically if not already loaded
+    if (!window.turf) {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js';
         document.head.appendChild(script);
     }
-    
-    loadTurf();
 });
