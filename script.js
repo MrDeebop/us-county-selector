@@ -187,21 +187,30 @@ function processExcelData(data) {
         const groupName = row[0];
         const countyName = row[1];
         const stateName = row[2];
-        const colorName = row[3].toLowerCase();
+        const colorValue = row[3];
         
         if (!groupsMap[groupName]) {
-            // Find the matching color class
+            // Determine the color class from the Excel data
             let colorClass;
-            if (colorName.match(/^\d+$/)) {
-                // If color is a number (index)
-                const index = parseInt(colorName) - 1;
+            if (typeof colorValue === 'string' && colorValue.match(/^\d+$/)) {
+                // If color is a number string (like "1", "2", etc.)
+                const index = parseInt(colorValue) - 1;
                 colorClass = GROUP_COLORS[index] || GROUP_COLORS[0];
-            } else {
-                // If color is a name (red, green, etc.)
+            } else if (typeof colorValue === 'number') {
+                // If color is a number
+                const index = colorValue - 1;
+                colorClass = GROUP_COLORS[index] || GROUP_COLORS[0];
+            } else if (typeof colorValue === 'string') {
+                // If color is a string, try to match it to a color class
+                const lowerColorValue = colorValue.toLowerCase();
                 const colorIndex = GROUP_COLORS.findIndex(c => 
-                    c.replace('group-color-', '') === colorName
+                    c.includes(lowerColorValue) || 
+                    c === `group-color-${lowerColorValue}`
                 );
                 colorClass = colorIndex >= 0 ? GROUP_COLORS[colorIndex] : GROUP_COLORS[0];
+            } else {
+                // Default to first color
+                colorClass = GROUP_COLORS[0];
             }
             
             groupsMap[groupName] = {
@@ -211,48 +220,80 @@ function processExcelData(data) {
             };
         }
         
-        // Create a mock feature for the county
-        const feature = {
-            properties: {
-                NAME: countyName,
-                STATEFP: getStateAbbreviationFromName(stateName) || stateName,
-                STATE: getStateAbbreviationFromName(stateName) || stateName,
-                STATE_NAME: stateName
-            }
-        };
-        
-        const countyData = {
-            countyFeature: feature,
-            stateName: stateName
-        };
-        
-        groupsMap[groupName].counties.push(countyData);
-        
-        // Update county-group mapping and map styling - JUST LIKE IN createGroup
-        const countyId = getCountyId(feature);
-        state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
+        // Find the actual county feature from the loaded shapefile
+        let actualCountyFeature = null;
+        let actualStateName = stateName;
         
         if (geoJsonLayer) {
             geoJsonLayer.eachLayer(layer => {
-                if (getCountyId(layer.feature) === countyId) {
-                    layer.setStyle({ 
-                        fillColor: getColorFromClass(groupsMap[groupName].colorClass),
-                        weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
-                    });
+                const feature = layer.feature;
+                const featureCountyName = feature.properties.NAME || feature.properties.name || '';
+                const featureCountyId = getCountyId(feature);
+                const featureStateName = state.countyStateMap[featureCountyId] || 
+                                       extractStateName(feature) || '';
+                
+                // Try to match county by name and state
+                if (featureCountyName.toLowerCase() === countyName.toLowerCase() &&
+                    (featureStateName.toLowerCase() === stateName.toLowerCase() ||
+                     getStateAbbreviationFromName(featureStateName) === getStateAbbreviationFromName(stateName) ||
+                     getStateNameFromAbbreviation(featureStateName) === stateName ||
+                     getStateNameFromAbbreviation(stateName) === featureStateName)) {
+                    actualCountyFeature = feature;
+                    actualStateName = featureStateName;
                 }
             });
         }
+        
+        // If we couldn't find the actual feature, create a mock one
+        if (!actualCountyFeature) {
+            actualCountyFeature = {
+                properties: {
+                    NAME: countyName,
+                    STATEFP: getStateAbbreviationFromName(stateName) || stateName,
+                    STATE: getStateAbbreviationFromName(stateName) || stateName,
+                    STATE_NAME: stateName
+                }
+            };
+        }
+        
+        const countyData = {
+            countyFeature: actualCountyFeature,
+            stateName: actualStateName
+        };
+        
+        groupsMap[groupName].counties.push(countyData);
     });
     
-    // Add to state.groups
+    // Add groups to state and update county-group mapping
     Object.values(groupsMap).forEach((group, index) => {
         const groupId = Date.now().toString() + index;
         state.groups[groupId] = group;
+        
+        // Update county-group mapping for each county in the group
+        group.counties.forEach(countyData => {
+            const countyId = getCountyId(countyData.countyFeature);
+            state.countyGroupMap[countyId] = group.colorClass;
+        });
     });
     
-    // Update the UI just like in createGroup
-    renderGroups();
-    clearSelection();
+    // Update map styling for all counties with group colors
+    if (geoJsonLayer) {
+        geoJsonLayer.eachLayer(layer => {
+            const countyId = getCountyId(layer.feature);
+            const colorClass = state.countyGroupMap[countyId];
+            
+            if (colorClass) {
+                layer.setStyle({ 
+                    fillColor: getColorFromClass(colorClass),
+                    weight: 1,
+                    opacity: 1,
+                    color: 'white',
+                    dashArray: '3',
+                    fillOpacity: 0.7
+                });
+            }
+        });
+    }
 }
 
 async function handleFileUpload() {
