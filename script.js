@@ -175,6 +175,10 @@ function processExcelData(data) {
     // Skip header row
     const rows = data.slice(1);
     
+    // Clear existing groups
+    state.groups = {};
+    state.countyGroupMap = {};
+    
     // Group rows by group name
     const groupsMap = {};
     rows.forEach(row => {
@@ -217,14 +221,27 @@ function processExcelData(data) {
             }
         };
         
-        groupsMap[groupName].counties.push({
+        const countyData = {
             countyFeature: feature,
             stateName: stateName
-        });
+        };
         
-        // Add to countyGroupMap
+        groupsMap[groupName].counties.push(countyData);
+        
+        // Update county-group mapping and map styling - JUST LIKE IN createGroup
         const countyId = getCountyId(feature);
         state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
+        
+        if (geoJsonLayer) {
+            geoJsonLayer.eachLayer(layer => {
+                if (getCountyId(layer.feature) === countyId) {
+                    layer.setStyle({ 
+                        fillColor: getColorFromClass(groupsMap[groupName].colorClass),
+                        weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
+                    });
+                }
+            });
+        }
     });
     
     // Add to state.groups
@@ -232,6 +249,10 @@ function processExcelData(data) {
         const groupId = Date.now().toString() + index;
         state.groups[groupId] = group;
     });
+    
+    // Update the UI just like in createGroup
+    renderGroups();
+    clearSelection();
 }
 
 async function handleFileUpload() {
