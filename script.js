@@ -16,12 +16,12 @@ const GROUP_COLORS = [
     'group-color-8'  // Pink
 ];
 
-// State management with enhanced county-state and color tracking
+// State management
 const state = {
-    selectedCounties: [], // Array of { countyFeature, stateName, colorClass? }
-    groups: {}, // { groupId: { name, counties: [], colorClass } }
-    countyStateMap: {}, // Maps county IDs to state names
-    countyGroupMap: {} // Maps county IDs to their group color class
+    selectedCounties: [],
+    groups: {},
+    countyStateMap: {},
+    countyGroupMap: {}
 };
 
 // DOM elements
@@ -102,9 +102,6 @@ async function handleExcelUpload() {
         return;
     }
     await processExcelFile(fileInput.files[0]);
-    
-    // Refresh the map styling after processing
-    refreshMapStyling();
 }
 
 async function handleDroppedExcelFile(files) {
@@ -135,23 +132,7 @@ async function processExcelFile(file) {
         
         // Update the display
         renderGroups();
-
-        //refresh map styling
-        refreshMapStyling();
-        
-        // Update map styling if geoJsonLayer exists
-        if (geoJsonLayer) {
-            geoJsonLayer.eachLayer(layer => {
-                const countyId = getCountyId(layer.feature);
-                const colorClass = state.countyGroupMap[countyId];
-                if (colorClass) {
-                    layer.setStyle({
-                        fillColor: getColorFromClass(colorClass),
-                        weight: 1
-                    });
-                }
-            });
-        }
+        refreshAllMapStyling();
         
         showMessage('Excel file loaded successfully', 'success', document.getElementById('excel-message'));
     } catch (error) {
@@ -193,10 +174,6 @@ function validateExcelFormat(data) {
 function processExcelData(data) {
     // Skip header row
     const rows = data.slice(1);
-    
-    // Clear existing groups
-    state.groups = {};
-    state.countyGroupMap = {};
     
     // Group rows by group name
     const groupsMap = {};
@@ -240,37 +217,20 @@ function processExcelData(data) {
             }
         };
         
-        const countyData = {
+        groupsMap[groupName].counties.push({
             countyFeature: feature,
             stateName: stateName
-        };
+        });
         
-        groupsMap[groupName].counties.push(countyData);
-        
-        // Add to countyGroupMap - use the same ID generation as in getCountyId()
+        // Add to countyGroupMap
         const countyId = getCountyId(feature);
         state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
     });
     
-    // Add to state.groups and update map styling
+    // Add to state.groups
     Object.values(groupsMap).forEach((group, index) => {
         const groupId = Date.now().toString() + index;
         state.groups[groupId] = group;
-        
-        // Update map styling for each county in this group
-        if (geoJsonLayer) {
-            group.counties.forEach(item => {
-                const countyId = getCountyId(item.countyFeature);
-                geoJsonLayer.eachLayer(layer => {
-                    if (getCountyId(layer.feature) === countyId) {
-                        layer.setStyle({
-                            fillColor: getColorFromClass(group.colorClass),
-                            weight: 1
-                        });
-                    }
-                });
-            });
-        }
     });
 }
 
@@ -379,32 +339,22 @@ function buildCountyStateMap(geojson) {
     });
 }
 
-function refreshMapStyling() {
+function refreshAllMapStyling() {
     if (!geoJsonLayer) return;
     
     geoJsonLayer.eachLayer(layer => {
         const countyId = getCountyId(layer.feature);
         const colorClass = state.countyGroupMap[countyId];
+        const isSelected = state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId);
         
-        if (colorClass) {
-            layer.setStyle({
-                fillColor: getColorFromClass(colorClass),
-                weight: 1,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-            });
-        } else {
-            layer.setStyle({
-                fillColor: '#3388ff',
-                weight: 1,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-            });
-        }
+        layer.setStyle({
+            fillColor: colorClass ? getColorFromClass(colorClass) : '#3388ff',
+            weight: isSelected ? 2 : 1,
+            opacity: 1,
+            color: 'white',
+            dashArray: '3',
+            fillOpacity: 0.7
+        });
     });
 }
 
@@ -513,20 +463,10 @@ function displayGeoJSON(geojson) {
     function style(feature) {
         const countyId = getCountyId(feature);
         const colorClass = state.countyGroupMap[countyId];
-        
-        if (colorClass) {
-            return {
-                fillColor: getColorFromClass(colorClass),
-                weight: 1,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-            };
-        }
+        const color = colorClass ? getColorFromClass(colorClass) : '#3388ff';
         
         return {
-            fillColor: '#3388ff',
+            fillColor: color,
             weight: 1,
             opacity: 1,
             color: 'white',
@@ -552,7 +492,18 @@ function displayGeoJSON(geojson) {
     }
     
     function resetHighlight(e) {
-        geoJsonLayer.resetStyle(e.target);
+        const layer = e.target;
+        const countyId = getCountyId(layer.feature);
+        const colorClass = state.countyGroupMap[countyId];
+        
+        if (colorClass) {
+            layer.setStyle({
+                fillColor: getColorFromClass(colorClass),
+                weight: 1
+            });
+        } else {
+            geoJsonLayer.resetStyle(layer);
+        }
         updateSelectedCountiesDisplay();
     }
     
@@ -631,21 +582,21 @@ function getCountyId(feature) {
 
 function clearSelection() {
     if (geoJsonLayer) {
-        state.selectedCounties.forEach(item => {
-            const countyId = getCountyId(item.countyFeature);
-            geoJsonLayer.eachLayer(layer => {
-                if (getCountyId(layer.feature) === countyId) {
-                    const existingColor = state.countyGroupMap[countyId];
-                    if (existingColor) {
-                        layer.setStyle({ 
-                            fillColor: getColorFromClass(existingColor),
-                            weight: 1
-                        });
-                    } else {
-                        layer.setStyle({ fillColor: '#3388ff', weight: 1 });
-                    }
-                }
-            });
+        geoJsonLayer.eachLayer(layer => {
+            const countyId = getCountyId(layer.feature);
+            const colorClass = state.countyGroupMap[countyId];
+            
+            if (colorClass) {
+                layer.setStyle({
+                    fillColor: getColorFromClass(colorClass),
+                    weight: 1
+                });
+            } else {
+                layer.setStyle({
+                    fillColor: '#3388ff',
+                    weight: 1
+                });
+            }
         });
     }
     
