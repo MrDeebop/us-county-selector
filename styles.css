@@ -162,3 +162,22 @@ input[type="text"] {
     color: white;
     font-weight: bold;
 }
+
+/* Add to existing styles */
+.drop-zone {
+    border: 2px dashed #ccc;
+    padding: 20px;
+    text-align: center;
+    margin: 10px 0;
+    border-radius: 8px;
+}
+
+.drop-zone.active {
+    border-color: #3498db;
+    background-color: #f0f8ff;
+}
+
+#excel-upload {
+    width: 100%;
+    margin: 10px 0;
+}
