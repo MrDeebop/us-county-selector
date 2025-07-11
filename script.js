@@ -680,33 +680,46 @@ function toggleCountySelection(feature, layer) {
         
         state.selectedCounties.push(newCounty);
         
-        // Apply color if exists, otherwise use default selection color
+        // Apply selection styling - show group color if exists, otherwise selection color
         if (existingColor) {
             layer.setStyle({ 
                 fillColor: getColorFromClass(existingColor),
-                weight: 2
+                weight: 3,  // Thicker border to show it's selected
+                color: '#000000',  // Black border for selection
+                dashArray: ''  // Solid border for selection
             });
         } else {
-            layer.setStyle({ fillColor: '#e74c3c', weight: 2 });
+            layer.setStyle({ 
+                fillColor: '#e74c3c', 
+                weight: 3,
+                color: '#000000',
+                dashArray: ''
+            });
         }
     } else {
         // Remove from selection
         state.selectedCounties.splice(index, 1);
         
-        // Revert to group color or default
+        // Revert to group color or default, with normal styling
         if (existingColor) {
             layer.setStyle({ 
                 fillColor: getColorFromClass(existingColor),
-                weight: 1
+                weight: 1,
+                color: 'white',
+                dashArray: '3'
             });
         } else {
-            layer.setStyle({ fillColor: '#3388ff', weight: 1 });
+            layer.setStyle({ 
+                fillColor: '#3388ff', 
+                weight: 1,
+                color: 'white',
+                dashArray: '3'
+            });
         }
     }
     
     updateSelectedCountiesDisplay();
 }
-
 function startDragSelection(feature, layer) {
     if (!state.ctrlPressed) return;
     
@@ -756,14 +769,21 @@ function addCountyToSelection(feature, layer) {
         
         state.selectedCounties.push(newCounty);
         
-        // Apply visual selection
+        // Apply selection styling - show group color if exists, otherwise selection color
         if (existingColor) {
             layer.setStyle({ 
                 fillColor: getColorFromClass(existingColor),
-                weight: 2
+                weight: 3,  // Thicker border to show it's selected
+                color: '#000000',  // Black border for selection
+                dashArray: ''  // Solid border for selection
             });
         } else {
-            layer.setStyle({ fillColor: '#e74c3c', weight: 2 });
+            layer.setStyle({ 
+                fillColor: '#e74c3c', 
+                weight: 3,
+                color: '#000000',
+                dashArray: ''
+            });
         }
     }
 }
