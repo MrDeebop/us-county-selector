@@ -276,24 +276,8 @@ function processExcelData(data) {
         });
     });
     
-    // Update map styling for all counties with group colors
-    if (geoJsonLayer) {
-        geoJsonLayer.eachLayer(layer => {
-            const countyId = getCountyId(layer.feature);
-            const colorClass = state.countyGroupMap[countyId];
-            
-            if (colorClass) {
-                layer.setStyle({ 
-                    fillColor: getColorFromClass(colorClass),
-                    weight: 1,
-                    opacity: 1,
-                    color: 'white',
-                    dashArray: '3',
-                    fillOpacity: 0.7
-                });
-            }
-        });
-    }
+    // Use the existing refreshAllMapStyling function to update the map
+    refreshAllMapStyling();
 }
 
 async function handleFileUpload() {
