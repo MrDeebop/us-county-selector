@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US County Assignment Tool</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>US County Assignment Tool</h1>
+        
+        <div class="upload-section">
+            <h2>1. Upload County GeoJSON</h2>
+            <input type="file" id="geojson-upload" accept=".geojson,.json">
+            <div id="geojson-status"></div>
+        </div>
+
+        <div class="assignment-section" id="assignment-section" style="display: none;">
+            <h2>2. Create County Assignments</h2>
+            
+            <div class="assignment-controls">
+                <input type="text" id="group-name" placeholder="Enter group name">
+                <button id="start-drawing">Start Drawing</button>
+                <button id="end-drawing" disabled>End Selection</button>
+                <button id="clear-drawing">Clear Current</button>
+            </div>
+
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+
+            <div class="data-actions">
+                <h3>3. Save or Load Assignments</h3>
+                <button id="export-data">Export to Excel</button>
+                <input type="file" id="import-data" accept=".xlsx,.xls,.csv" style="display: none;">
+                <button id="import-button">Import from Excel</button>
+                <button id="clear-all">Clear All Assignments</button>
+            </div>
+
+            <div class="assignments-table">
+                <h3>Current Assignments</h3>
+                <table id="assignments-table">
+                    <thead>
+                        <tr>
+                            <th>Group Name</th>
+                            <th>County Count</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="assignments-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
