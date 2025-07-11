@@ -4,12 +4,24 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-// State management with enhanced county-state tracking
+// Color definitions for groups
+const GROUP_COLORS = [
+    'group-color-1', // Red
+    'group-color-2', // Green
+    'group-color-3', // Blue
+    'group-color-4', // Yellow
+    'group-color-5', // Purple
+    'group-color-6', // Orange
+    'group-color-7', // Teal
+    'group-color-8'  // Pink
+];
+
+// State management with enhanced county-state and color tracking
 const state = {
-    selectedCounties: [], // Array of { countyFeature, stateName }
-    groups: {}, // { groupId: { name, counties: [{ countyFeature, stateName }] } }
-    currentGroupId: null,
-    countyStateMap: {} // Maps county IDs to state names
+    selectedCounties: [], // Array of { countyFeature, stateName, colorClass? }
+    groups: {}, // { groupId: { name, counties: [], colorClass } }
+    countyStateMap: {}, // Maps county IDs to state names
+    countyGroupMap: {} // Maps county IDs to their group color class
 };
 
 // DOM elements
@@ -33,7 +45,13 @@ const elements = {
 
 let geoJsonLayer = null;
 
-// Event listeners
+// Initialize the application
+function init() {
+    setupEventListeners();
+    updateSelectedCountiesDisplay();
+}
+
+// Set up event listeners
 function setupEventListeners() {
     // File upload
     elements.uploadBtn.addEventListener('click', handleFileUpload);
@@ -60,7 +78,7 @@ function setupEventListeners() {
     elements.exportExcelBtn.addEventListener('click', exportToExcel);
 }
 
-// File handling with enhanced state data extraction
+// File handling functions
 async function handleFileUpload() {
     const files = Array.from(elements.fileInput.files);
     if (files.length === 0) {
@@ -73,15 +91,12 @@ async function handleFileUpload() {
 async function handleDroppedFiles(items) {
     const files = [];
     
-    // Handle directory drop
     if (items[0]?.webkitGetAsEntry) {
         for (let i = 0; i < items.length; i++) {
             const item = items[i].webkitGetAsEntry();
             if (item) await traverseFileTree(item, files);
         }
-    } 
-    // Handle direct file drop
-    else {
+    } else {
         for (let i = 0; i < items.length; i++) {
             files.push(items[i]);
         }
@@ -114,7 +129,6 @@ async function processShapefile(files) {
     try {
         showLoading('Processing shapefile...');
         
-        // Filter to shapefile components
         const shapefileFiles = files.filter(file => {
             const ext = file.name.split('.').pop().toLowerCase();
             return ['shp', 'shx', 'dbf', 'prj', 'cpg', 'xml'].includes(ext);
@@ -124,7 +138,6 @@ async function processShapefile(files) {
             throw new Error('No valid shapefile components found');
         }
         
-        // Find required files
         const shpFile = shapefileFiles.find(f => f.name.toLowerCase().endsWith('.shp'));
         const shxFile = shapefileFiles.find(f => f.name.toLowerCase().endsWith('.shx'));
         const dbfFile = shapefileFiles.find(f => f.name.toLowerCase().endsWith('.dbf'));
@@ -133,22 +146,17 @@ async function processShapefile(files) {
             throw new Error('Missing required .shp, .shx, or .dbf files');
         }
         
-        // Read files
         const [shpBuffer, dbfBuffer] = await Promise.all([
             readFileAsArrayBuffer(shpFile),
             readFileAsArrayBuffer(dbfFile)
         ]);
         
-        // Process with shapefile.js
         const geojson = shp.combine([
             shp.parseShp(shpBuffer),
             shp.parseDbf(dbfBuffer)
         ]);
         
-        // Extract state information from properties
         buildCountyStateMap(geojson);
-        
-        // Display on map
         displayGeoJSON(geojson);
         showMessage('Shapefile loaded successfully with state data', 'success');
     } catch (error) {
@@ -159,9 +167,10 @@ async function processShapefile(files) {
     }
 }
 
-// Build a map of county IDs to state names
+// County and state management
 function buildCountyStateMap(geojson) {
     state.countyStateMap = {};
+    state.countyGroupMap = {};
     
     geojson.features.forEach(feature => {
         const countyId = getCountyId(feature);
@@ -175,11 +184,8 @@ function buildCountyStateMap(geojson) {
     });
 }
 
-// Enhanced state name extraction from DBF properties
 function extractStateName(feature) {
     const props = feature.properties;
-    
-    // Try common state name property keys
     const possibleKeys = [
         'STATEFP', 'STATE', 'STATENS', 'STUSPS', 'STATE_NAME', 
         'STATENAME', 'STNAME', 'STATEABBR', 'STABBR'
@@ -187,7 +193,6 @@ function extractStateName(feature) {
     
     for (const key of possibleKeys) {
         if (props[key]) {
-            // If it's a state code, try to map to name
             if (key === 'STATEFP' || key === 'STATE') {
                 return getStateNameFromCode(props[key]) || props[key];
             }
@@ -195,7 +200,6 @@ function extractStateName(feature) {
         }
     }
     
-    // If no direct state property, try to find it in other fields
     for (const key in props) {
         const value = props[key];
         if (typeof value === 'string' && value.length === 2 && isStateAbbreviation(value)) {
@@ -209,7 +213,7 @@ function extractStateName(feature) {
     return null;
 }
 
-// Helper functions for state identification
+// State helper functions
 function isStateAbbreviation(abbr) {
     return !!getStateNameFromAbbreviation(abbr);
 }
@@ -257,7 +261,6 @@ function getStateAbbreviationFromName(name) {
 }
 
 function getStateNameFromCode(code) {
-    // Map FIPS state codes to state names
     const fipsCodes = {
         '01': 'Alabama', '02': 'Alaska', '04': 'Arizona', '05': 'Arkansas',
         '06': 'California', '08': 'Colorado', '09': 'Connecticut', '10': 'Delaware',
@@ -276,25 +279,28 @@ function getStateNameFromCode(code) {
     return fipsCodes[code] || null;
 }
 
-function readFileAsArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsArrayBuffer(file);
-    });
-}
-
-// Map display functions with enhanced state handling
+// Map display functions
 function displayGeoJSON(geojson) {
-    // Clear previous layer if exists
     if (geoJsonLayer) {
         map.removeLayer(geoJsonLayer);
         clearSelection();
     }
     
-    // Style function
     function style(feature) {
+        const countyId = getCountyId(feature);
+        const colorClass = state.countyGroupMap[countyId];
+        
+        if (colorClass) {
+            return {
+                fillColor: getColorFromClass(colorClass),
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+            };
+        }
+        
         return {
             fillColor: '#3388ff',
             weight: 1,
@@ -305,7 +311,6 @@ function displayGeoJSON(geojson) {
         };
     }
     
-    // Highlight on hover
     function highlightFeature(e) {
         const layer = e.target;
         layer.setStyle({
@@ -316,7 +321,6 @@ function displayGeoJSON(geojson) {
         });
         layer.bringToFront();
         
-        // Show county and state info
         const countyName = layer.feature.properties.NAME || layer.feature.properties.name || 'Unknown County';
         const countyId = getCountyId(layer.feature);
         const stateName = state.countyStateMap[countyId] || 'Unknown State';
@@ -328,7 +332,6 @@ function displayGeoJSON(geojson) {
         updateSelectedCountiesDisplay();
     }
     
-    // Handle feature clicks
     function onEachFeature(feature, layer) {
         layer.on({
             click: (e) => toggleCountySelection(feature, layer),
@@ -337,53 +340,86 @@ function displayGeoJSON(geojson) {
         });
     }
     
-    // Create GeoJSON layer
     geoJsonLayer = L.geoJSON(geojson, {
         style: style,
         onEachFeature: onEachFeature
     }).addTo(map);
     
-    // Fit map to bounds
     map.fitBounds(geoJsonLayer.getBounds());
 }
 
-// County selection functions with state tracking
+function getColorFromClass(colorClass) {
+    return getComputedStyle(document.documentElement)
+        .getPropertyValue(`--${colorClass.replace('group-color-', 'color-')}`)
+        .trim() || '#3388ff';
+}
+
+// County selection and grouping
 function toggleCountySelection(feature, layer) {
     const countyId = getCountyId(feature);
     const stateName = state.countyStateMap[countyId] || 'Unknown State';
+    const existingColor = state.countyGroupMap[countyId];
     
     const index = state.selectedCounties.findIndex(c => getCountyId(c.countyFeature) === countyId);
     
     if (index === -1) {
         // Add to selection
-        state.selectedCounties.push({
+        const newCounty = {
             countyFeature: feature,
-            stateName: stateName
-        });
-        layer.setStyle({ fillColor: '#e74c3c', weight: 2 });
+            stateName: stateName,
+            colorClass: existingColor || null
+        };
+        
+        state.selectedCounties.push(newCounty);
+        
+        // Apply color if exists, otherwise use default selection color
+        if (existingColor) {
+            layer.setStyle({ 
+                fillColor: getColorFromClass(existingColor),
+                weight: 2
+            });
+        } else {
+            layer.setStyle({ fillColor: '#e74c3c', weight: 2 });
+        }
     } else {
         // Remove from selection
         state.selectedCounties.splice(index, 1);
-        layer.setStyle({ fillColor: '#3388ff', weight: 1 });
+        
+        // Revert to group color or default
+        if (existingColor) {
+            layer.setStyle({ 
+                fillColor: getColorFromClass(existingColor),
+                weight: 1
+            });
+        } else {
+            layer.setStyle({ fillColor: '#3388ff', weight: 1 });
+        }
     }
     
     updateSelectedCountiesDisplay();
 }
 
 function getCountyId(feature) {
-    // Create unique ID from county name and state code if available
     const name = feature.properties.NAME || feature.properties.name || 'unknown';
     const stateCode = feature.properties.STATEFP || feature.properties.STATE || '00';
     return `${name}-${stateCode}`.toLowerCase();
 }
 
 function clearSelection() {
-    // Reset styles
     if (geoJsonLayer) {
         state.selectedCounties.forEach(item => {
+            const countyId = getCountyId(item.countyFeature);
             geoJsonLayer.eachLayer(layer => {
-                if (getCountyId(layer.feature) === getCountyId(item.countyFeature)) {
-                    layer.setStyle({ fillColor: '#3388ff', weight: 1 });
+                if (getCountyId(layer.feature) === countyId) {
+                    const existingColor = state.countyGroupMap[countyId];
+                    if (existingColor) {
+                        layer.setStyle({ 
+                            fillColor: getColorFromClass(existingColor),
+                            weight: 1
+                        });
+                    } else {
+                        layer.setStyle({ fillColor: '#3388ff', weight: 1 });
+                    }
                 }
             });
         });
@@ -393,7 +429,7 @@ function clearSelection() {
     updateSelectedCountiesDisplay();
 }
 
-// Group management functions with state data
+// Group management
 function createGroup() {
     const groupName = elements.groupNameInput.value.trim();
     if (!groupName) {
@@ -407,10 +443,30 @@ function createGroup() {
     }
     
     const groupId = Date.now().toString();
+    const colorClass = GROUP_COLORS[Object.keys(state.groups).length % GROUP_COLORS.length];
+    
     state.groups[groupId] = {
         name: groupName,
-        counties: [...state.selectedCounties] // Copy the selected counties with their state data
+        counties: [...state.selectedCounties],
+        colorClass: colorClass
     };
+    
+    // Update county-group mapping and map styling
+    state.selectedCounties.forEach(item => {
+        const countyId = getCountyId(item.countyFeature);
+        state.countyGroupMap[countyId] = colorClass;
+        
+        if (geoJsonLayer) {
+            geoJsonLayer.eachLayer(layer => {
+                if (getCountyId(layer.feature) === countyId) {
+                    layer.setStyle({ 
+                        fillColor: getColorFromClass(colorClass),
+                        weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
+                    });
+                }
+            });
+        }
+    });
     
     renderGroups();
     clearSelection();
@@ -423,9 +479,8 @@ function renderGroups() {
     
     Object.entries(state.groups).forEach(([groupId, group]) => {
         const groupEl = document.createElement('div');
-        groupEl.className = 'group-item';
+        groupEl.className = `group-item ${group.colorClass}`;
         
-        // Count unique states in this group
         const stateCount = new Set(group.counties.map(c => c.stateName)).size;
         
         groupEl.innerHTML = `
@@ -438,15 +493,35 @@ function renderGroups() {
         
         elements.groupsContainer.appendChild(groupEl);
         
-        // Add delete button event
         groupEl.querySelector('.delete-group').addEventListener('click', (e) => {
-            delete state.groups[e.target.dataset.groupId];
+            const groupId = e.target.dataset.groupId;
+            const group = state.groups[groupId];
+            
+            // Remove group colors from counties
+            group.counties.forEach(item => {
+                const countyId = getCountyId(item.countyFeature);
+                delete state.countyGroupMap[countyId];
+                
+                // Reset map styling if layer exists
+                if (geoJsonLayer) {
+                    geoJsonLayer.eachLayer(layer => {
+                        if (getCountyId(layer.feature) === countyId) {
+                            layer.setStyle({ 
+                                fillColor: '#3388ff',
+                                weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
+                            });
+                        }
+                    });
+                }
+            });
+            
+            delete state.groups[groupId];
             renderGroups();
         });
     });
 }
 
-// Display functions with state information
+// Display functions
 function updateSelectedCountiesDisplay() {
     elements.selectedCountiesContainer.innerHTML = '';
     
@@ -469,7 +544,7 @@ function updateSelectedCountiesDisplay() {
     });
 }
 
-// Export functions with state data
+// Export functions
 function exportToExcel() {
     if (Object.keys(state.groups).length === 0) {
         showMessage('No groups to export', 'error', elements.exportMessage);
@@ -477,29 +552,21 @@ function exportToExcel() {
     }
     
     try {
-        // Prepare data
-        const data = [];
+        const data = [['Group Name', 'County Name', 'State', 'Color']];
         
-        // Add headers
-        data.push(['Group Name', 'County Name', 'State']);
-        
-        // Add group data
         Object.values(state.groups).forEach(group => {
             group.counties.forEach(item => {
                 const name = item.countyFeature.properties.NAME || 
                              item.countyFeature.properties.name || 
                              'Unknown County';
                 const stateName = item.stateName || 'Unknown State';
-                data.push([group.name, name, stateName]);
+                data.push([group.name, name, stateName, group.colorClass.replace('group-color-', '')]);
             });
         });
         
-        // Create workbook
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(data);
         XLSX.utils.book_append_sheet(wb, ws, 'County Groups');
-        
-        // Export
         XLSX.writeFile(wb, 'county_groups.xlsx');
         showMessage('Excel file exported successfully with state data', 'success', elements.exportMessage);
     } catch (error) {
@@ -508,7 +575,16 @@ function exportToExcel() {
     }
 }
 
-// UI helper functions
+// Utility functions
+function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 function showLoading(message) {
     elements.loadingText.textContent = message;
     elements.loadingDiv.style.display = 'block';
@@ -525,6 +601,5 @@ function showMessage(text, type, element = elements.messageDiv) {
     if (type === 'error') console.error(text);
 }
 
-// Initialize
-setupEventListeners();
-updateSelectedCountiesDisplay();
+// Initialize the application
+init();
