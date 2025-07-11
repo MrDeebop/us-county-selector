@@ -448,14 +448,27 @@ function refreshAllMapStyling() {
         const colorClass = state.countyGroupMap[countyId];
         const isSelected = state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId);
         
-        layer.setStyle({
-            fillColor: colorClass ? getColorFromClass(colorClass) : '#3388ff',
-            weight: isSelected ? 2 : 1,
-            opacity: 1,
-            color: 'white',
-            dashArray: '3',
-            fillOpacity: 0.7
-        });
+        if (isSelected) {
+            // Selected styling
+            layer.setStyle({
+                fillColor: colorClass ? getColorFromClass(colorClass) : '#e74c3c',
+                weight: 3,
+                opacity: 1,
+                color: '#000000',
+                dashArray: '',
+                fillOpacity: 0.7
+            });
+        } else {
+            // Normal styling
+            layer.setStyle({
+                fillColor: colorClass ? getColorFromClass(colorClass) : '#3388ff',
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+            });
+        }
     });
 }
 
@@ -553,6 +566,21 @@ function getStateNameFromCode(code) {
     };
     return fipsCodes[code] || null;
 }
+function getNextAvailableColor() {
+    // Get all colors currently in use
+    const usedColors = new Set(Object.values(state.groups).map(group => group.colorClass));
+    
+    // Find the first unused color
+    for (let i = 0; i < GROUP_COLORS.length; i++) {
+        const color = GROUP_COLORS[i];
+        if (!usedColors.has(color)) {
+            return color;
+        }
+    }
+    
+    // If all colors are used, cycle back to the beginning
+    return GROUP_COLORS[Object.keys(state.groups).length % GROUP_COLORS.length];
+}
 
 // Map display functions
 function displayGeoJSON(geojson) {
@@ -596,17 +624,42 @@ function displayGeoJSON(geojson) {
         const layer = e.target;
         const countyId = getCountyId(layer.feature);
         const colorClass = state.countyGroupMap[countyId];
+        const isSelected = state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId);
         
-        if (colorClass) {
-            layer.setStyle({
-                fillColor: getColorFromClass(colorClass),
-                weight: 1
-            });
+        if (isSelected) {
+            // Keep selection styling - don't reset if county is selected
+            if (colorClass) {
+                layer.setStyle({
+                    fillColor: getColorFromClass(colorClass),
+                    weight: 3,  // Keep thick border for selection
+                    color: '#000000',  // Keep black border for selection
+                    dashArray: ''  // Keep solid border for selection
+                });
+            } else {
+                layer.setStyle({
+                    fillColor: '#e74c3c', // Keep selection color
+                    weight: 3,
+                    color: '#000000',
+                    dashArray: ''
+                });
+            }
         } else {
-            geoJsonLayer.resetStyle(layer);
+            // Not selected, use normal styling
+            if (colorClass) {
+                layer.setStyle({
+                    fillColor: getColorFromClass(colorClass),
+                    weight: 1,
+                    color: 'white',
+                    dashArray: '3'
+                });
+            } else {
+                geoJsonLayer.resetStyle(layer);
+            }
         }
+        
         updateSelectedCountiesDisplay();
     }
+
     
     function onEachFeature(feature, layer) {
         layer.on({
@@ -833,7 +886,7 @@ function createGroup() {
     }
     
     const groupId = Date.now().toString();
-    const colorClass = GROUP_COLORS[Object.keys(state.groups).length % GROUP_COLORS.length];
+    const colorClass = getNextAvailableColor(); // Use the new function
     
     state.groups[groupId] = {
         name: groupName,
@@ -851,7 +904,9 @@ function createGroup() {
                 if (getCountyId(layer.feature) === countyId) {
                     layer.setStyle({ 
                         fillColor: getColorFromClass(colorClass),
-                        weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
+                        weight: 1, // Reset to normal weight since it's no longer selected
+                        color: 'white',
+                        dashArray: '3'
                     });
                 }
             });
