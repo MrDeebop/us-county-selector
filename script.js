@@ -22,6 +22,9 @@ const state = {
     groups: {},
     countyStateMap: {},
     countyGroupMap: {}
+    isDragging: false,
+    dragStarted: false,
+    dragSelectedCounties: new Set()
 };
 
 // DOM elements
@@ -91,6 +94,26 @@ function setupEventListeners() {
         e.preventDefault();
         document.getElementById('excel-drop-zone').classList.remove('active');
         handleDroppedExcelFile(e.dataTransfer.files);
+    });
+    // Prevent default map dragging when drag selecting
+    elements.map.getContainer().addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('leaflet-interactive') || 
+            e.target.tagName === 'path') {
+            // This is a county, prepare for potential drag selection
+            state.dragStarted = true;
+        }
+    });
+    // Global mouse events for drag selection
+    document.addEventListener('mouseup', (e) => {
+        if (state.isDragging) {
+            endDragSelection();
+        }
+    });
+    
+    document.addEventListener('mouseleave', (e) => {
+        if (state.isDragging) {
+            endDragSelection();
+        }
     });
 }
 
@@ -562,9 +585,37 @@ function displayGeoJSON(geojson) {
     
     function onEachFeature(feature, layer) {
         layer.on({
-            click: (e) => toggleCountySelection(feature, layer),
-            mouseover: highlightFeature,
-            mouseout: resetHighlight
+            click: (e) => {
+                e.originalEvent.preventDefault();
+                if (!state.isDragging) {
+                    toggleCountySelection(feature, layer);
+                }
+            },
+            mouseover: (e) => {
+                if (state.isDragging) {
+                    // Add county to drag selection if not already selected
+                    const countyId = getCountyId(feature);
+                    if (!state.dragSelectedCounties.has(countyId)) {
+                        state.dragSelectedCounties.add(countyId);
+                        addCountyToSelection(feature, layer);
+                    }
+                } else {
+                    highlightFeature(e);
+                }
+            },
+            mouseout: (e) => {
+                if (!state.isDragging) {
+                    resetHighlight(e);
+                }
+            },
+            mousedown: (e) => {
+                e.originalEvent.preventDefault();
+                startDragSelection(feature, layer);
+            },
+            mouseup: (e) => {
+                e.originalEvent.preventDefault();
+                endDragSelection();
+            }
         });
     }
     
@@ -627,6 +678,65 @@ function toggleCountySelection(feature, layer) {
     updateSelectedCountiesDisplay();
 }
 
+function startDragSelection(feature, layer) {
+    state.isDragging = true;
+    state.dragStarted = true;
+    state.dragSelectedCounties.clear();
+    
+    // Add the starting county to drag selection
+    const countyId = getCountyId(feature);
+    state.dragSelectedCounties.add(countyId);
+    addCountyToSelection(feature, layer);
+    
+    // Prevent text selection during drag
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+}
+
+function endDragSelection() {
+    if (state.isDragging) {
+        state.isDragging = false;
+        state.dragStarted = false;
+        
+        // Re-enable text selection
+        document.body.style.userSelect = '';
+        document.body.style.webkitUserSelect = '';
+        
+        // Update display
+        updateSelectedCountiesDisplay();
+    }
+}
+
+function addCountyToSelection(feature, layer) {
+    const countyId = getCountyId(feature);
+    const stateName = state.countyStateMap[countyId] || 'Unknown State';
+    const existingColor = state.countyGroupMap[countyId];
+    
+    // Check if county is already in selection
+    const index = state.selectedCounties.findIndex(c => getCountyId(c.countyFeature) === countyId);
+    
+    if (index === -1) {
+        // Add to selection
+        const newCounty = {
+            countyFeature: feature,
+            stateName: stateName,
+            colorClass: existingColor || null
+        };
+        
+        state.selectedCounties.push(newCounty);
+        
+        // Apply visual selection
+        if (existingColor) {
+            layer.setStyle({ 
+                fillColor: getColorFromClass(existingColor),
+                weight: 2
+            });
+        } else {
+            layer.setStyle({ fillColor: '#e74c3c', weight: 2 });
+        }
+    }
+}
+
 function getCountyId(feature) {
     const name = feature.properties.NAME || feature.properties.name || 'unknown';
     const stateCode = feature.properties.STATEFP || feature.properties.STATE || '00';
@@ -654,6 +764,7 @@ function clearSelection() {
     }
     
     state.selectedCounties = [];
+    state.dragSelectedCounties.clear(); // ADD THIS LINE
     updateSelectedCountiesDisplay();
 }
 
