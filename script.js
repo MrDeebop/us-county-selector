@@ -40,7 +40,8 @@ const elements = {
     selectedCountiesContainer: document.getElementById('selected-counties'),
     clearSelectionBtn: document.getElementById('clear-selection'),
     exportExcelBtn: document.getElementById('export-excel'),
-    exportMessage: document.getElementById('export-message')
+    exportMessage: document.getElementById('export-message'),
+    excelMessage: document.getElementById('excel-message')
 };
 
 let geoJsonLayer = null;
@@ -76,9 +77,160 @@ function setupEventListeners() {
     elements.createGroupBtn.addEventListener('click', createGroup);
     elements.clearSelectionBtn.addEventListener('click', clearSelection);
     elements.exportExcelBtn.addEventListener('click', exportToExcel);
+
+    // Excel upload
+    document.getElementById('excel-upload-btn').addEventListener('click', handleExcelUpload);
+    document.getElementById('excel-drop-zone').addEventListener('dragover', (e) => {
+        e.preventDefault();
+        document.getElementById('excel-drop-zone').classList.add('active');
+    });
+    document.getElementById('excel-drop-zone').addEventListener('dragleave', () => {
+        document.getElementById('excel-drop-zone').classList.remove('active');
+    });
+    document.getElementById('excel-drop-zone').addEventListener('drop', (e) => {
+        e.preventDefault();
+        document.getElementById('excel-drop-zone').classList.remove('active');
+        handleDroppedExcelFile(e.dataTransfer.files);
+    });
 }
 
 // File handling functions
+async function handleExcelUpload() {
+    const fileInput = document.getElementById('excel-upload');
+    if (fileInput.files.length === 0) {
+        showMessage('Please select an Excel file first.', 'error', document.getElementById('excel-message'));
+        return;
+    }
+    await processExcelFile(fileInput.files[0]);
+}
+
+async function handleDroppedExcelFile(files) {
+    if (files.length === 0) return;
+    const excelFile = files[0];
+    if (excelFile.name.match(/\.(xlsx|xls)$/i)) {
+        await processExcelFile(excelFile);
+    } else {
+        showMessage('Please upload a valid Excel file (.xlsx or .xls)', 'error', document.getElementById('excel-message'));
+    }
+}
+
+async function processExcelFile(file) {
+    try {
+        showLoading('Processing Excel file...');
+        
+        const data = await readExcelFile(file);
+        if (!validateExcelFormat(data)) {
+            throw new Error('Invalid Excel format. Please use the exported format.');
+        }
+        
+        // Clear existing groups
+        state.groups = {};
+        state.countyGroupMap = {};
+        
+        // Process the Excel data into groups
+        processExcelData(data);
+        
+        // Update the display
+        renderGroups();
+        
+        // Update map styling if geoJsonLayer exists
+        if (geoJsonLayer) {
+            geoJsonLayer.eachLayer(layer => {
+                const countyId = getCountyId(layer.feature);
+                const colorClass = state.countyGroupMap[countyId];
+                if (colorClass) {
+                    layer.setStyle({
+                        fillColor: getColorFromClass(colorClass),
+                        weight: 1
+                    });
+                }
+            });
+        }
+        
+        showMessage('Excel file loaded successfully', 'success', document.getElementById('excel-message'));
+    } catch (error) {
+        showMessage(`Error: ${error.message}`, 'error', document.getElementById('excel-message'));
+        console.error(error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function readExcelFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                resolve(jsonData);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function validateExcelFormat(data) {
+    if (data.length < 2) return false;
+    const headers = data[0];
+    return headers[0] === 'Group Name' && 
+           headers[1] === 'County Name' && 
+           headers[2] === 'State' && 
+           headers[3] === 'Color';
+}
+
+function processExcelData(data) {
+    // Skip header row
+    const rows = data.slice(1);
+    
+    // Group rows by group name
+    const groupsMap = {};
+    rows.forEach(row => {
+        if (row.length < 4) return;
+        
+        const groupName = row[0];
+        const countyName = row[1];
+        const stateName = row[2];
+        const colorName = row[3];
+        
+        if (!groupsMap[groupName]) {
+            groupsMap[groupName] = {
+                name: groupName,
+                counties: [],
+                colorClass: `group-color-${GROUP_COLORS.findIndex(c => c.includes(colorName)) + 1}`
+            };
+        }
+        
+        // Create a mock feature for the county
+        const feature = {
+            properties: {
+                NAME: countyName,
+                // Add other properties that might be needed
+            },
+            // Add other feature properties if needed
+        };
+        
+        groupsMap[groupName].counties.push({
+            countyFeature: feature,
+            stateName: stateName
+        });
+        
+        // Add to countyGroupMap
+        const countyId = `${countyName}-${stateName}`.toLowerCase();
+        state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
+    });
+    
+    // Add to state.groups
+    Object.values(groupsMap).forEach((group, index) => {
+        const groupId = Date.now().toString() + index;
+        state.groups[groupId] = group;
+    });
+}
 async function handleFileUpload() {
     const files = Array.from(elements.fileInput.files);
     if (files.length === 0) {
