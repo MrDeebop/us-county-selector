@@ -196,13 +196,27 @@ function processExcelData(data) {
         const groupName = row[0];
         const countyName = row[1];
         const stateName = row[2];
-        const colorName = row[3];
+        const colorName = row[3].toLowerCase(); // Convert to lowercase for consistent matching
         
         if (!groupsMap[groupName]) {
+            // Find the matching color class
+            let colorClass;
+            if (colorName.match(/^\d+$/)) {
+                // If color is a number (index)
+                const index = parseInt(colorName) - 1;
+                colorClass = GROUP_COLORS[index] || GROUP_COLORS[0];
+            } else {
+                // If color is a name (red, green, etc.)
+                const colorIndex = GROUP_COLORS.findIndex(c => 
+                    c.replace('group-color-', '') === colorName
+                );
+                colorClass = colorIndex >= 0 ? GROUP_COLORS[colorIndex] : GROUP_COLORS[0];
+            }
+            
             groupsMap[groupName] = {
                 name: groupName,
                 counties: [],
-                colorClass: `group-color-${GROUP_COLORS.findIndex(c => c.includes(colorName)) + 1}`
+                colorClass: colorClass
             };
         }
         
@@ -210,9 +224,11 @@ function processExcelData(data) {
         const feature = {
             properties: {
                 NAME: countyName,
-                // Add other properties that might be needed
-            },
-            // Add other feature properties if needed
+                // Try to match state properties that might be in your shapefile
+                STATEFP: getStateAbbreviationFromName(stateName) || stateName,
+                STATE: getStateAbbreviationFromName(stateName) || stateName,
+                STATE_NAME: stateName
+            }
         };
         
         groupsMap[groupName].counties.push({
@@ -220,8 +236,8 @@ function processExcelData(data) {
             stateName: stateName
         });
         
-        // Add to countyGroupMap
-        const countyId = `${countyName}-${stateName}`.toLowerCase();
+        // Add to countyGroupMap - use the same ID generation as in getCountyId()
+        const countyId = `${countyName}-${getStateAbbreviationFromName(stateName) || stateName}`.toLowerCase();
         state.countyGroupMap[countyId] = groupsMap[groupName].colorClass;
     });
     
@@ -231,6 +247,7 @@ function processExcelData(data) {
         state.groups[groupId] = group;
     });
 }
+
 async function handleFileUpload() {
     const files = Array.from(elements.fileInput.files);
     if (files.length === 0) {
@@ -332,6 +349,27 @@ function buildCountyStateMap(geojson) {
             state.countyStateMap[countyId] = stateName;
         } else {
             console.warn('Could not determine state for county:', feature.properties);
+        }
+    });
+}
+
+function refreshMapStyling() {
+    if (!geoJsonLayer) return;
+    
+    geoJsonLayer.eachLayer(layer => {
+        const countyId = getCountyId(layer.feature);
+        const colorClass = state.countyGroupMap[countyId];
+        
+        if (colorClass) {
+            layer.setStyle({
+                fillColor: getColorFromClass(colorClass),
+                weight: 1
+            });
+        } else {
+            layer.setStyle({
+                fillColor: '#3388ff',
+                weight: 1
+            });
         }
     });
 }
