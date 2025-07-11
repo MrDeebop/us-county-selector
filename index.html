@@ -1,89 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>US County Selector</title>
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
-          integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
-          crossorigin=""/>
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Our CSS -->
-    <link rel="stylesheet" href="styles/main.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>County Assignment Tool</title>
+  <link rel="stylesheet" href="styles/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 </head>
 <body>
-    <div class="app-container">
-        <!-- Welcome Modal -->
-        <div id="welcome-modal" class="modal">
-            <div class="modal-content">
-                <h2><i class="fas fa-map-marked-alt"></i> US County Selector</h2>
-                <p>To get started:</p>
-                <ol>
-                    <li>Download the <a href="https://www.census.gov/cgi-bin/geo/shapefiles/index.php?year=2024&layergroup=Counties+%28and+equivalent%29" target="_blank">County Shapefile from the US Census Bureau</a></li>
-                    <li>Convert the Shapefile to GeoJSON using <a href="https://mapshaper.org/" target="_blank">mapshaper.org</a>:
-                        <ul>
-                            <li>Drag your .shp file into mapshaper</li>
-                            <li>Click "Export" and choose "JSON" format</li>
-                            <li>Select "GeoJSON" as the output type</li>
-                            <li>Download the file (it may still have .json extension)</li>
-                        </ul>
-                    </li>
-                    <li>Upload the converted file below (either .geojson or .json extension)</li>
-                </ol>
-                
-                <div class="file-upload-section">
-                    <h3>1. Upload County GeoJSON</h3>
-                    <input type="file" id="geojson-upload" accept=".geojson,.json">
-                    
-                    <h3>2. Optional: Upload Existing Assignments (CSV)</h3>
-                    <input type="file" id="csv-upload" accept=".csv">
-                    <p class="hint">CSV format should be: countyId,countyName,state,group</p>
-                </div>
-                
-                <button id="start-app" class="btn primary-btn" disabled>
-                    <i class="fas fa-play"></i> Start Application
-                </button>
-            </div>
-        </div>
-        
-        <!-- Main App (initially hidden) -->
-        <div id="main-app" style="display:none;">
-            <div id="map"></div>
-            <div class="control-panel">
-                <!-- ... (same control panel as before) ... -->
-            </div>
-        </div>
-    </div>
+  <h1>County Assignment Tool</h1>
 
-    <!-- Loading Spinner Template -->
-    <template id="loading-spinner">
-        <div class="loading-spinner">
-            <svg viewBox="0 0 50 50">
-                <circle cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
-            </svg>
-            <div class="time-estimate">
-                <span id="time-remaining">About 15 seconds remaining</span>
-                <div class="time-bar">
-                    <div class="time-progress"></div>
-                </div>
-            </div>
-        </div>
-    </template>
+  <div class="controls">
+    <label for="geojson-upload">Upload GeoJSON:</label>
+    <input type="file" id="geojson-upload" accept="application/json">
 
-    <!-- JavaScript Libraries -->
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
-            integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
-            crossorigin=""></script>
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    
-    <!-- Our JavaScript -->
-    <script src="scripts/data-upload.js"></script>
-    <script src="scripts/main.js"></script>
+    <label for="excel-upload">Upload Existing Excel:</label>
+    <input type="file" id="excel-upload" accept=".xlsx">
+
+    <label for="name-input">Enter Name:</label>
+    <input type="text" id="name-input">
+
+    <button id="start-selection">Start Selection</button>
+    <button id="end-selection" disabled>End Selection</button>
+    <button id="export-excel">Export Excel</button>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="scripts/map.js"></script>
 </body>
 </html>
