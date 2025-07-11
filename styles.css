@@ -181,3 +181,12 @@ input[type="text"] {
     width: 100%;
     margin: 10px 0;
 }
+
+/* Drag selection mode indicator */
+.drag-selection-mode {
+    cursor: crosshair !important;
+}
+
+.drag-selection-mode * {
+    cursor: crosshair !important;
+}
