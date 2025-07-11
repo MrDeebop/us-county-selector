@@ -141,3 +141,24 @@ input[type="text"] {
     width: 0%;
     transition: width 0.3s;
 }
+
+/* Add these at the end of the file */
+.group-color-1 { background-color: #ff6b6b; }  /* Red */
+.group-color-2 { background-color: #51cf66; }  /* Green */
+.group-color-3 { background-color: #339af0; }  /* Blue */
+.group-color-4 { background-color: #fcc419; }  /* Yellow */
+.group-color-5 { background-color: #9775fa; }  /* Purple */
+.group-color-6 { background-color: #ff922b; }  /* Orange */
+.group-color-7 { background-color: #20c997; }  /* Teal */
+.group-color-8 { background-color: #f06595; }  /* Pink */
+
+/* Update group-item style */
+.group-item {
+    padding: 8px;
+    margin: 5px 0;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    color: white;
+    font-weight: bold;
+}
