@@ -60,6 +60,8 @@ function init() {
 }
 
 // Set up event listeners
+// REWRITTEN FUNCTION
+// Set up event listeners
 function setupEventListeners() {
     // File upload
     elements.uploadBtn.addEventListener('click', handleFileUpload);
@@ -115,7 +117,9 @@ function setupEventListeners() {
         document.getElementById('zip-drop-zone').classList.remove('active');
         handleDroppedZipFile(e.dataTransfer.files);
     });
-    document.getElementById('export-zip-excel').addEventListener('click', exportToExcelWithZipCodes);
+    
+    // Ensure this specific line is correctly targeting the button and function
+    document.getElementById('export-zip-excel').addEventListener('click', exportToExcelWithZipCodes); 
     
     // Keyboard event listeners for Ctrl key
     document.addEventListener('keydown', (e) => {
