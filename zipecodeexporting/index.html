@@ -328,11 +328,21 @@
         function handleZipFile(e) {
             const file = e.target.files[0];
             if (!file) return;
-            readFile(file, 
+            readFile(file,
                 (data) => {
                     zipData = data;
+        
+                    // --- Preprocessing: Remove "County" from zip data ---
+                    for (let i = 1; i < zipData.length; i++) { // Start from 1 to skip header
+                        // Specifically target the first column (county name)
+                        if (zipData[i][0] && typeof zipData[i][0] === 'string') {
+                            zipData[i][0] = zipData[i][0].replace(/ county/ig, '').trim();
+                        }
+                    }
+                    // --------------------------------------------------
+        
                     zipFileLoaded = true;
-                    showFileStatus('zipFileStatus', `Zip code file loaded: ${file.name}`, 'success');
+                    showFileStatus('zipFileStatus', `Zip code file loaded and cleaned: ${file.name}`, 'success');
                     updateProcessButton();
                 },
                 (error) => {
