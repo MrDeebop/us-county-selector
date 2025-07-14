@@ -12,6 +12,28 @@
             box-sizing: border-box;
         }
 
+        .guidance-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            text-align: left;
+            color: #495057;
+            font-size: 0.95em;
+            line-height: 1.6;
+            border-left: 5px solid #ffc107;
+        }
+        
+        .guidance-section a {
+            color: #0056b3;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        
+        .guidance-section a:hover {
+            text-decoration: underline;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -230,6 +252,14 @@
 <body>
     <div class="container">
         <h1>County-Zip Code Processing Tool</h1>
+
+        <div class="guidance-section">
+            <p>
+                Need a user file? Export one from <a href="https://mrdeebop.github.io/us-county-selector/" target="_blank">this county selector tool</a>.
+                <br><br>
+                Need a zip code file? Make an account in <a href="https://rowzero.io/blog/zip-code-to-state-county-metro#zip-code-to-county" target="_blank">Row Zero</a>, copy columns from the 'County to Zip' sheet into your own Excel document, and upload it in the format [county, state, zip].
+            </p>
+        </div>
         
         <div class="file-section">
             <h2>1. Upload User File</h2>
