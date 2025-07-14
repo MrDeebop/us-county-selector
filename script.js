@@ -26,7 +26,9 @@ const state = {
     isDragging: false,
     dragStarted: false,
     dragSelectedCounties: new Set(),
-    ctrlPressed: false
+    ctrlPressed: false,
+    zipCodeData: null,        // NEW: Store processed zip code data
+    zipCodeStats: null        // NEW: Store zip code processing statistics
 };
 
 // DOM elements
@@ -96,6 +98,22 @@ function setupEventListeners() {
         e.preventDefault();
         document.getElementById('excel-drop-zone').classList.remove('active');
         handleDroppedExcelFile(e.dataTransfer.files);
+    });
+
+    // ADD THESE NEW ZIP CODE EVENT LISTENERS:
+    // Zip code upload
+    document.getElementById('zip-upload-btn').addEventListener('click', handleZipUpload);
+    document.getElementById('zip-drop-zone').addEventListener('dragover', (e) => {
+        e.preventDefault();
+        document.getElementById('zip-drop-zone').classList.add('active');
+    });
+    document.getElementById('zip-drop-zone').addEventListener('dragleave', () => {
+        document.getElementById('zip-drop-zone').classList.remove('active');
+    });
+    document.getElementById('zip-drop-zone').addEventListener('drop', (e) => {
+        e.preventDefault();
+        document.getElementById('zip-drop-zone').classList.remove('active');
+        handleDroppedZipFile(e.dataTransfer.files);
     });
     
     // Keyboard event listeners for Ctrl key
@@ -223,6 +241,148 @@ function validateExcelFormat(data) {
            headers[1] === 'County Name' && 
            headers[2] === 'State' && 
            headers[3] === 'Color';
+}
+
+async function processZipCodeFile(file) {
+    try {
+        showLoading('Processing zip code file...');
+        
+        const data = await readExcelFile(file);
+        if (!validateZipCodeFormat(data)) {
+            throw new Error('Invalid zip code file format. Expected columns: County, State, Zip Code');
+        }
+        
+        // Process the zip code data
+        const processedData = processZipCodeData(data);
+        
+        // Store processed data in state
+        state.zipCodeData = processedData.cleanData;
+        state.zipCodeStats = processedData.stats;
+        
+        // Update the display
+        displayZipCodeStats(processedData.stats);
+        
+        // Show the special export button
+        document.getElementById('export-zip-excel').style.display = 'inline-block';
+        
+        showMessage('Zip code file processed successfully', 'success', document.getElementById('zip-message'));
+    } catch (error) {
+        showMessage(`Error: ${error.message}`, 'error', document.getElementById('zip-message'));
+        console.error(error);
+    } finally {
+        hideLoading();
+    }
+}
+
+function processZipCodeData(data) {
+    const rows = data.slice(1); // Skip header row
+    const zipToCountyMap = new Map();
+    const duplicates = new Set();
+    
+    // First pass: identify duplicates
+    rows.forEach(row => {
+        if (row.length < 3) return;
+        
+        const county = row[0]?.toString().trim();
+        const state = row[1]?.toString().trim();
+        const zipCode = row[2]?.toString().trim();
+        
+        if (!county || !state || !zipCode) return;
+        
+        const key = zipCode;
+        if (zipToCountyMap.has(key)) {
+            duplicates.add(key);
+        } else {
+            zipToCountyMap.set(key, { county, state, zipCode });
+        }
+    });
+    
+    // Second pass: remove duplicates (keep first occurrence)
+    const cleanData = [];
+    const processedZips = new Set();
+    
+    rows.forEach(row => {
+        if (row.length < 3) return;
+        
+        const county = row[0]?.toString().trim();
+        const state = row[1]?.toString().trim();
+        const zipCode = row[2]?.toString().trim();
+        
+        if (!county || !state || !zipCode) return;
+        
+        if (!processedZips.has(zipCode)) {
+            cleanData.push({ county, state, zipCode });
+            processedZips.add(zipCode);
+        }
+    });
+    
+    return {
+        cleanData,
+        stats: {
+            totalRows: rows.length,
+            duplicateZips: duplicates.size,
+            finalCount: cleanData.length,
+            duplicateList: Array.from(duplicates).slice(0, 10) // Show first 10 duplicates
+        }
+    };
+}
+
+// Add this new function to display zip code statistics
+function displayZipCodeStats(stats) {
+    const statsDiv = document.getElementById('zip-stats');
+    statsDiv.style.display = 'block';
+    
+    let html = `
+        <h4>Zip Code Processing Results</h4>
+        <ul>
+            <li class="processing-info">Total rows processed: ${stats.totalRows}</li>
+            <li class="duplicate-warning">Duplicate zip codes found: ${stats.duplicateZips}</li>
+            <li class="processing-info">Final unique zip codes: ${stats.finalCount}</li>
+        </ul>
+    `;
+    
+    if (stats.duplicateZips > 0) {
+        html += `
+            <p class="duplicate-warning">Duplicates were removed (first occurrence kept).</p>
+        `;
+        
+        if (stats.duplicateList.length > 0) {
+            html += `
+                <p>Sample duplicate zip codes: ${stats.duplicateList.join(', ')}
+                ${stats.duplicateZips > 10 ? '...' : ''}</p>
+            `;
+        }
+    }
+    
+    statsDiv.innerHTML = html;
+}
+
+function validateZipCodeFormat(data) {
+    if (data.length < 2) return false;
+    const headers = data[0];
+    return headers.length >= 3 && 
+           headers[0].toLowerCase().includes('county') && 
+           headers[1].toLowerCase().includes('state') && 
+           headers[2].toLowerCase().includes('zip');
+}
+
+async function handleZipUpload() {
+    const fileInput = document.getElementById('zip-upload');
+    if (fileInput.files.length === 0) {
+        showMessage('Please select a zip code Excel file first.', 'error', document.getElementById('zip-message'));
+        return;
+    }
+    await processZipCodeFile(fileInput.files[0]);
+}
+
+async function handleDroppedZipFile(files) {
+    if (files.length === 0) return;
+    const zipFile = files[0];
+    if (zipFile.name.match(/\.(xlsx|xls)$/i)) {
+        await processZipCodeFile(zipFile);
+    } else {
+        showMessage('Please upload a valid Excel file (.xlsx or .xls)', 'error', document.getElementById('zip-message'));
+    }
 }
 
 function processExcelData(data) {
