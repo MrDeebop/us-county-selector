@@ -115,6 +115,7 @@ function setupEventListeners() {
         document.getElementById('zip-drop-zone').classList.remove('active');
         handleDroppedZipFile(e.dataTransfer.files);
     });
+    document.getElementById('export-zip-excel').addEventListener('click', exportToExcelWithZipCodes);
     
     // Keyboard event listeners for Ctrl key
     document.addEventListener('keydown', (e) => {
