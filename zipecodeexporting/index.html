@@ -149,6 +149,7 @@
             font-weight: bold;
             margin-right: 15px;
             font-size: 14px;
+            flex-shrink: 0;
         }
 
         .step.completed .step-number {
@@ -164,8 +165,7 @@
             background: #dc3545;
         }
 
-        .process-btn {
-            background: linear-gradient(45deg, #28a745, #20c997);
+        .process-btn, .export-btn {
             color: white;
             border: none;
             padding: 15px 30px;
@@ -175,6 +175,10 @@
             font-weight: 600;
             transition: all 0.3s ease;
             margin: 10px 5px;
+        }
+        
+        .process-btn {
+             background: linear-gradient(45deg, #28a745, #20c997);
         }
 
         .process-btn:hover:not(:disabled) {
@@ -182,23 +186,8 @@
             box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
         }
 
-        .process-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            transform: none;
-        }
-
         .export-btn {
             background: linear-gradient(45deg, #e74c3c, #c0392b);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            margin: 10px 5px;
         }
 
         .export-btn:hover:not(:disabled) {
@@ -206,37 +195,11 @@
             box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
         }
 
-        .export-btn:disabled {
+        .process-btn:disabled, .export-btn:disabled {
             background: #6c757d;
             cursor: not-allowed;
             transform: none;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-        }
-
-        .stat-number {
-            font-size: 2em;
-            font-weight: 700;
-            color: #3498db;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            color: #6c757d;
-            font-size: 0.9em;
+            box-shadow: none;
         }
 
         .alert {
@@ -244,12 +207,6 @@
             margin: 15px 0;
             border-radius: 10px;
             font-weight: 500;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
         }
 
         .alert-danger {
@@ -267,16 +224,6 @@
         .button-group {
             text-align: center;
             margin-top: 30px;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-
-        .processing {
-            animation: pulse 2s infinite;
         }
     </style>
 </head>
@@ -308,30 +255,11 @@
             <h2>Processing Steps</h2>
             <div id="step1" class="step pending">
                 <div class="step-number">1</div>
-                <div>Remove duplicate zip codes (keep first occurrence)</div>
+                <div>Validate county-state pairs</div>
             </div>
             <div id="step2" class="step pending">
                 <div class="step-number">2</div>
-                <div>Validate county-state pair counts</div>
-            </div>
-            <div id="step3" class="step pending">
-                <div class="step-number">3</div>
-                <div>Process and export final file</div>
-            </div>
-        </div>
-
-        <div class="stats" id="stats" style="display: none;">
-            <div class="stat-card">
-                <div class="stat-number" id="removedZips">0</div>
-                <div class="stat-label">Duplicate Zips Removed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="userPairs">0</div>
-                <div class="stat-label">User County-State Pairs</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="zipPairs">0</div>
-                <div class="stat-label">Zip County-State Pairs</div>
+                <div>Duplicate rows and assign zip codes</div>
             </div>
         </div>
 
@@ -350,72 +278,70 @@
         let userFileLoaded = false;
         let zipFileLoaded = false;
 
-        // File upload handlers
         document.getElementById('userFile').addEventListener('change', handleUserFile);
         document.getElementById('zipFile').addEventListener('change', handleZipFile);
         document.getElementById('processBtn').addEventListener('click', processFiles);
         document.getElementById('exportBtn').addEventListener('click', exportFile);
 
-        function handleUserFile(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
+        function readFile(file, onLoaded, onError) {
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    const workbook = XLSX.read(e.target.result, {type: 'binary'});
+                    const workbook = XLSX.read(e.target.result, { type: 'binary' });
                     const sheetName = workbook.SheetNames[0];
                     const sheet = workbook.Sheets[sheetName];
-                    userData = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                    let data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
                     
-                    // Remove empty rows
-                    userData = userData.filter(row => row.some(cell => cell !== undefined && cell !== ''));
+                    data = data.filter(row => row.some(cell => cell !== null && cell !== undefined && cell !== ''));
                     
-                    if (userData.length < 2) {
-                        throw new Error('File must contain at least a header row and one data row');
+                    if (data.length < 2) {
+                        throw new Error('File must contain a header and at least one data row.');
                     }
-                    
-                    userFileLoaded = true;
-                    showFileStatus('userFileStatus', 'User file loaded successfully', 'success');
-                    updateProcessButton();
+                    onLoaded(data);
                 } catch (error) {
-                    showFileStatus('userFileStatus', 'Error loading user file: ' + error.message, 'error');
-                    userFileLoaded = false;
-                    updateProcessButton();
+                    onError(error);
                 }
             };
+            reader.onerror = () => onError(new Error('Failed to read the file.'));
             reader.readAsBinaryString(file);
+        }
+
+        function handleUserFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            readFile(file, 
+                (data) => {
+                    userData = data;
+                    userFileLoaded = true;
+                    showFileStatus('userFileStatus', `User file loaded: ${file.name}`, 'success');
+                    updateProcessButton();
+                },
+                (error) => {
+                    userData = null;
+                    userFileLoaded = false;
+                    showFileStatus('userFileStatus', `Error: ${error.message}`, 'error');
+                    updateProcessButton();
+                }
+            );
         }
 
         function handleZipFile(e) {
             const file = e.target.files[0];
             if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const workbook = XLSX.read(e.target.result, {type: 'binary'});
-                    const sheetName = workbook.SheetNames[0];
-                    const sheet = workbook.Sheets[sheetName];
-                    zipData = XLSX.utils.sheet_to_json(sheet, {header: 1});
-                    
-                    // Remove empty rows
-                    zipData = zipData.filter(row => row.some(cell => cell !== undefined && cell !== ''));
-                    
-                    if (zipData.length < 2) {
-                        throw new Error('File must contain at least a header row and one data row');
-                    }
-                    
+            readFile(file, 
+                (data) => {
+                    zipData = data;
                     zipFileLoaded = true;
-                    showFileStatus('zipFileStatus', 'Zip code file loaded successfully', 'success');
+                    showFileStatus('zipFileStatus', `Zip code file loaded: ${file.name}`, 'success');
                     updateProcessButton();
-                } catch (error) {
-                    showFileStatus('zipFileStatus', 'Error loading zip code file: ' + error.message, 'error');
+                },
+                (error) => {
+                    zipData = null;
                     zipFileLoaded = false;
+                    showFileStatus('zipFileStatus', `Error: ${error.message}`, 'error');
                     updateProcessButton();
                 }
-            };
-            reader.readAsBinaryString(file);
+            );
         }
 
         function showFileStatus(elementId, message, type) {
@@ -426,20 +352,21 @@
         }
 
         function updateProcessButton() {
-            const processBtn = document.getElementById('processBtn');
-            processBtn.disabled = !(userFileLoaded && zipFileLoaded);
+            document.getElementById('processBtn').disabled = !(userFileLoaded && zipFileLoaded);
         }
 
         function showAlert(message, type) {
             const alertsDiv = document.getElementById('alerts');
             const alert = document.createElement('div');
             alert.className = `alert alert-${type}`;
-            alert.textContent = message;
+            alert.innerHTML = message; // Use innerHTML to render line breaks
             alertsDiv.appendChild(alert);
         }
 
         function clearAlerts() {
             document.getElementById('alerts').innerHTML = '';
+            document.getElementById('exportBtn').disabled = true;
+            processedData = null;
         }
 
         function updateStep(stepId, status) {
@@ -449,103 +376,43 @@
 
         function processFiles() {
             clearAlerts();
-            document.getElementById('stats').style.display = 'block';
-            
-            // Reset steps
             updateStep('step1', 'pending');
             updateStep('step2', 'pending');
-            updateStep('step3', 'pending');
-            
-            // Step 1: Remove duplicate zip codes
+
+            // --- Step 1: Validate county-state pairs ---
             updateStep('step1', 'processing');
-            
-            // Create a map to track zip codes and their first occurrence
-            const zipMap = new Map();
-            const cleanZipData = [zipData[0]]; // Keep header
-            let removedCount = 0;
-            
-            for (let i = 1; i < zipData.length; i++) {
-                const row = zipData[i];
-                const county = row[0];
-                const state = row[1];
-                const zip = row[2];
-                
-                if (!zip) continue;
-                
-                if (zipMap.has(zip)) {
-                    removedCount++;
-                    continue;
-                }
-                
-                zipMap.set(zip, true);
-                cleanZipData.push(row);
+
+            const userPairs = new Set(
+                userData.slice(1).map(row => `${row[1]}|${row[2]}`)
+            );
+            const zipPairs = new Set(
+                zipData.slice(1).map(row => `${row[0]}|${row[1]}`)
+            );
+
+            const missingPairs = [...userPairs].filter(pair => !zipPairs.has(pair));
+
+            if (missingPairs.length > 0) {
+                const diff = missingPairs.length;
+                const errorMsg = `<b>Validation Failed:</b> User file has ${diff} county-state pair(s) not found in the zip code file. Export is blocked.<br><br>Missing pairs:<br>- ${missingPairs.join('<br>- ')}`;
+                showAlert(errorMsg, 'danger');
+                updateStep('step1', 'error');
+                return; // Stop processing
             }
             
-            zipData = cleanZipData;
-            document.getElementById('removedZips').textContent = removedCount;
-            
-            if (removedCount > 0) {
-                showAlert(`Removed ${removedCount} duplicate zip codes`, 'warning');
-            }
-            
+            const diff = zipPairs.size - userPairs.size;
+            showAlert(`Validation Successful. Zip file has ${diff} more unique county-state pairs than the user file.`, 'info');
             updateStep('step1', 'completed');
-            
-            // Step 2: Validate county-state pairs
+
+            // --- Step 2: Duplicate rows and assign zips ---
             updateStep('step2', 'processing');
             
-            // Get unique county-state pairs from user file
-            const userPairs = new Set();
-            for (let i = 1; i < userData.length; i++) {
-                const row = userData[i];
-                const county = row[1];
-                const state = row[2];
-                if (county && state) {
-                    userPairs.add(`${county}|${state}`);
-                }
-            }
-            
-            // Get unique county-state pairs from zip file
-            const zipPairs = new Set();
-            for (let i = 1; i < zipData.length; i++) {
-                const row = zipData[i];
-                const county = row[0];
-                const state = row[1];
-                if (county && state) {
-                    zipPairs.add(`${county}|${state}`);
-                }
-            }
-            
-            const userPairCount = userPairs.size;
-            const zipPairCount = zipPairs.size;
-            const difference = userPairCount - zipPairCount;
-            
-            document.getElementById('userPairs').textContent = userPairCount;
-            document.getElementById('zipPairs').textContent = zipPairCount;
-            
-            if (difference > 0) {
-                showAlert(`Error: User file has ${difference} more county-state pairs than zip file. Export blocked.`, 'danger');
-                updateStep('step2', 'error');
-                document.getElementById('exportBtn').disabled = true;
-                return;
-            } else if (difference < 0) {
-                showAlert(`Info: Zip file has ${Math.abs(difference)} more county-state pairs than user file.`, 'info');
-            } else {
-                showAlert('County-state pair counts match perfectly.', 'info');
-            }
-            
-            updateStep('step2', 'completed');
-            
-            // Step 3: Process for export
-            updateStep('step3', 'processing');
-            
-            // Create a map of county-state to zip codes
+            // Create a map of county-state to a list of zips
             const countyStateToZips = new Map();
             for (let i = 1; i < zipData.length; i++) {
                 const row = zipData[i];
                 const county = row[0];
                 const state = row[1];
                 const zip = row[2];
-                
                 if (county && state && zip) {
                     const key = `${county}|${state}`;
                     if (!countyStateToZips.has(key)) {
@@ -555,25 +422,22 @@
                 }
             }
             
-            // Process user data
-            processedData = [['group name', 'county name', 'state', 'color', 'zip']]; // New header with zip column
+            // Process user data to create the final export data
+            processedData = [['group name', 'county name', 'state', 'color', 'zip']];
             
             for (let i = 1; i < userData.length; i++) {
                 const row = userData[i];
-                const groupName = row[0];
-                const county = row[1];
-                const state = row[2];
-                const color = row[3];
+                const [groupName, county, state, color] = row;
                 
                 if (county && state) {
                     const key = `${county}|${state}`;
                     const zips = countyStateToZips.get(key) || [];
                     
                     if (zips.length === 0) {
-                        // No zip codes found for this county-state pair
+                        // This case should not be reached if validation passes
                         processedData.push([groupName, county, state, color, '']);
                     } else {
-                        // Duplicate row for each zip code
+                        // Duplicate the row for each zip code
                         for (const zip of zips) {
                             processedData.push([groupName, county, state, color, zip]);
                         }
@@ -581,25 +445,25 @@
                 }
             }
             
-            updateStep('step3', 'completed');
-            showAlert('Processing completed successfully!', 'info');
+            updateStep('step2', 'completed');
+            showAlert('Processing complete. Your file is ready for export.', 'info');
             document.getElementById('exportBtn').disabled = false;
         }
 
         function exportFile() {
-            if (!processedData) {
-                showAlert('No processed data to export', 'danger');
+            if (!processedData || processedData.length <= 1) {
+                showAlert('No data to export. Please process files first.', 'danger');
                 return;
             }
             
             const ws = XLSX.utils.aoa_to_sheet(processedData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Processed Data');
+            XLSX.utils.book_append_sheet(wb, ws, 'Processed_Data');
             
-            const fileName = `processed_county_zip_${new Date().toISOString().split('T')[0]}.xlsx`;
+            const fileName = `processed_county_zips_${new Date().toISOString().split('T')[0]}.xlsx`;
             XLSX.writeFile(wb, fileName);
             
-            showAlert(`File exported successfully as ${fileName}`, 'info');
+            showAlert(`File exported as <strong>${fileName}</strong>`, 'info');
         }
     </script>
 </body>
