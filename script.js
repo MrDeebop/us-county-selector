@@ -341,20 +341,21 @@ function displayZipCodeStats(stats) {
         <h4>Zip Code Processing Results</h4>
         <ul>
             <li class="processing-info">Total rows processed: ${stats.totalRows}</li>
-            <li class="duplicate-warning">Duplicate zip codes across multiple counties: ${stats.duplicateZips}</li>
+            <li class="duplicate-warning">Duplicate zip codes removed: ${stats.duplicateZips}</li>
             <li class="processing-info">Final unique zip codes: ${stats.finalCount}</li>
+            <li class="processing-info">Unique county-state pairs: ${getUniqueCountyStatePairsFromZipData().size}</li>
         </ul>
     `;
     
     if (stats.duplicateZips > 0) {
         html += `
-            <p class="duplicate-warning">Duplicates were removed (first occurrence kept).</p>
+            <p class="duplicate-warning">Note: Duplicate zip codes were removed to ensure each zip code maps to only one county.</p>
         `;
         
         if (stats.duplicateList.length > 0) {
             html += `
-                <p>Sample duplicate zip codes: ${stats.duplicateList.join(', ')}
-                ${stats.duplicateZips > 10 ? '...' : ''}</p>
+                <p><strong>Sample duplicate zip codes:</strong> ${stats.duplicateList.join(', ')}
+                ${stats.duplicateZips > 10 ? ' (and more...)' : ''}</p>
             `;
         }
     }
@@ -399,7 +400,6 @@ function getUniqueCountyStatePairsFromZipData() {
     const uniquePairs = new Set();
     state.zipCodeData.forEach(item => {
         if (item.county && item.state) {
-            // Normalize county name and state for comparison
             const normalizedCounty = item.county.trim().toLowerCase();
             const normalizedState = item.state.trim().toLowerCase();
             uniquePairs.add(`${normalizedCounty}|${normalizedState}`);
@@ -473,12 +473,11 @@ function validateZipCodeCoverage() {
 
 // Function to match counties with zip codes for export
 function matchCountiesWithZipCodes() {
-    const matches = []; // Use an array to maintain order, if desired, otherwise a Map is fine.
+    const matches = [];
 
-    // Create a robust map of normalized county-state pairs to their zip codes
-    // Each key will be "countyname|statename" (lowercase, trimmed)
-    // The value will be an array of zip codes for that county-state pair
-    const zipCodeToCountyStateMap = new Map();
+    // Create a map of normalized county-state pairs to their zip codes
+    const countyStateToZipCodesMap = new Map();
+    
     state.zipCodeData.forEach(item => {
         const normalizedCounty = item.county?.toString().trim().toLowerCase();
         const normalizedState = item.state?.toString().trim().toLowerCase();
@@ -486,36 +485,50 @@ function matchCountiesWithZipCodes() {
 
         if (normalizedCounty && normalizedState && zipCode) {
             const key = `${normalizedCounty}|${normalizedState}`;
-            if (!zipCodeToCountyStateMap.has(key)) {
-                zipCodeToCountyStateMap.set(key, new Set()); // Use a Set to ensure unique zip codes per county-state pair
+            if (!countyStateToZipCodesMap.has(key)) {
+                countyStateToZipCodesMap.set(key, []);
             }
-            zipCodeToCountyStateMap.get(key).add(zipCode);
+            countyStateToZipCodesMap.get(key).push(zipCode);
         }
     });
 
     // Iterate through user-defined groups and their counties
     Object.values(state.groups).forEach(group => {
-        group.counties.forEach(item => {
+        group.counties.forEach(countyItem => {
             // Extract county and state names from the feature properties and normalize them
-            const originalCountyName = item.countyFeature.properties.NAME ||
-                                     item.countyFeature.properties.name ||
+            const originalCountyName = countyItem.countyFeature.properties.NAME ||
+                                     countyItem.countyFeature.properties.name ||
                                      'Unknown County';
-            const originalStateName = item.stateName || 'Unknown State';
+            const originalStateName = countyItem.stateName || 'Unknown State';
 
             const normalizedCounty = originalCountyName.trim().toLowerCase();
             const normalizedState = originalStateName.trim().toLowerCase();
             const key = `${normalizedCounty}|${normalizedState}`;
 
-            // Retrieve zip codes using the normalized key
-            const zipCodesForCounty = Array.from(zipCodeToCountyStateMap.get(key) || []);
+            // Retrieve zip codes for this county-state pair
+            const zipCodesForCounty = countyStateToZipCodesMap.get(key) || [];
 
-            matches.push({
-                groupName: group.name,
-                countyName: originalCountyName,
-                stateName: originalStateName,
-                colorClass: group.colorClass,
-                zipCodes: zipCodesForCounty
+            // Create a separate row for each zip code
+            zipCodesForCounty.forEach(zipCode => {
+                matches.push({
+                    groupName: group.name,
+                    countyName: originalCountyName,
+                    stateName: originalStateName,
+                    colorClass: group.colorClass,
+                    zipCode: zipCode // Single zip code per row
+                });
             });
+
+            // If no zip codes found for this county, still add the county with empty zip code
+            if (zipCodesForCounty.length === 0) {
+                matches.push({
+                    groupName: group.name,
+                    countyName: originalCountyName,
+                    stateName: originalStateName,
+                    colorClass: group.colorClass,
+                    zipCode: '' // Empty zip code for counties without matches
+                });
+            }
         });
     });
 
@@ -526,7 +539,7 @@ function matchCountiesWithZipCodes() {
 function exportToExcelWithZipCodes() {
     const validation = validateZipCodeCoverage();
 
-    // Always show validation message to the user, even if it's a warning or success
+    // Always show validation message to the user
     showMessage(validation.message, validation.type, document.getElementById('zip-message'));
 
     if (!validation.valid && validation.type === 'error') {
@@ -535,7 +548,7 @@ function exportToExcelWithZipCodes() {
 
     try {
         const matches = matchCountiesWithZipCodes();
-        const data = [['Group Name', 'County Name', 'State', 'Color', 'Zip Codes']];
+        const data = [['Group Name', 'County Name', 'State', 'Color', 'Zip Code']];
 
         if (matches.length === 0) {
             showMessage('No county-group assignments with matching zip code data found for export.', 'warning', document.getElementById('zip-message'));
@@ -543,14 +556,13 @@ function exportToExcelWithZipCodes() {
         }
 
         matches.forEach(match => {
-            const zipCodesString = match.zipCodes.join(', '); // This is correct for array to string
             data.push([
                 match.groupName,
                 match.countyName,
                 match.stateName,
-                // Ensure color is exported in a readable format, e.g., "1" for group-color-1
+                // Ensure color is exported in a readable format
                 match.colorClass.replace('group-color-', ''),
-                zipCodesString
+                match.zipCode // Single zip code per row
             ]);
         });
 
@@ -559,7 +571,16 @@ function exportToExcelWithZipCodes() {
         XLSX.utils.book_append_sheet(wb, ws, 'County Groups with Zip Codes');
         XLSX.writeFile(wb, 'county_groups_with_zipcodes.xlsx');
 
-        showMessage('Excel file with zip codes exported successfully', 'success', document.getElementById('zip-message'));
+        const totalRows = matches.length;
+        const countiesWithZips = matches.filter(m => m.zipCode !== '').length;
+        const countiesWithoutZips = totalRows - countiesWithZips;
+
+        let successMessage = `Excel file exported successfully with ${totalRows} rows`;
+        if (countiesWithoutZips > 0) {
+            successMessage += ` (${countiesWithoutZips} counties had no matching zip codes)`;
+        }
+
+        showMessage(successMessage, 'success', document.getElementById('zip-message'));
     } catch (error) {
         showMessage(`Export failed: ${error.message}`, 'error', document.getElementById('zip-message'));
         console.error(error);
