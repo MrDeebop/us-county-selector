@@ -28,7 +28,6 @@
             <h3>Instructions:</h3>
             <ol>
                 <li>Upload your complete shapefile folder (must include .shp, .shx, and .dbf)</li>
-                <li>Optionally upload zip code to county mapping Excel file</li>
                 <li>Click counties on the map to select them (state data will be included automatically)</li>
                 <li>Create named groups and add selected counties to them</li>
                 <li>Export your groups to Excel when finished</li>
@@ -53,18 +52,6 @@
             <div id="message"></div>
         </div>
 
-        <div class="upload-section">
-            <h2>Zip Code to County Mapping</h2>
-            <div id="zip-drop-zone" class="drop-zone">
-                <p>Drag and drop your zip code Excel file here</p>
-                <p>or</p>
-                <input type="file" id="zip-upload" accept=".xlsx,.xls">
-            </div>
-            <button id="zip-upload-btn">Load Zip Code Data</button>
-            <div id="zip-message"></div>
-            <div id="zip-stats" class="zip-stats" style="display: none;"></div>
-        </div>
-        
         <div class="upload-section">
             <h2>Excel Group Data Upload</h2>
             <div id="excel-drop-zone" class="drop-zone">
@@ -93,13 +80,11 @@
         
         <div class="export-section">
             <h2>Export Groups</h2>
-            <div class="export-buttons">
-                <button id="export-excel">Export to Excel</button>
-                <button id="export-zip-excel" style="display: none;">Export with Zip Codes</button>
-            </div>
+            <button id="export-excel">Export to Excel</button>
             <div id="export-message"></div>
         </div>
     </div>
+
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://unpkg.com/shpjs@4.0.2/dist/shp.js"></script>
     <script src="script.js"></script>
