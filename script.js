@@ -336,7 +336,7 @@ function displayZipCodeStats(stats) {
         <h4>Zip Code Processing Results</h4>
         <ul>
             <li class="processing-info">Total rows processed: ${stats.totalRows}</li>
-            <li class="duplicate-warning">Duplicate zip codes found: ${stats.duplicateZips}</li>
+            <li class="duplicate-warning">Duplicate zip codes across multiple counties: ${stats.duplicateZips}</li>
             <li class="processing-info">Final unique zip codes: ${stats.finalCount}</li>
         </ul>
     `;
