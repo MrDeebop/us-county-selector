@@ -739,6 +739,42 @@ function toggleCountySelection(feature, layer) {
     
     updateSelectedCountiesDisplay();
 }
+
+function onEachFeature(feature, layer) {
+    layer.on({
+        click: (e) => {
+            if (!state.ctrlPressed && !state.isDragging) {
+                toggleCountySelection(feature, layer);
+            }
+        },
+        mouseover: (e) => {
+            if (state.isDragging && state.ctrlPressed) {
+                // Add county to drag selection if not already selected
+                const countyId = getCountyId(feature);
+                if (!state.dragSelectedCounties.has(countyId)) {
+                    state.dragSelectedCounties.add(countyId);
+                    addCountyToSelection(feature, layer);
+                }
+            } else if (!state.isDragging) {
+                highlightFeature(e);
+            }
+        },
+        mouseout: (e) => {
+            if (!state.isDragging) {
+                resetHighlight(e);
+            }
+        },
+        mousedown: (e) => {
+            if (state.ctrlPressed) {
+                e.originalEvent.preventDefault();
+                e.originalEvent.stopPropagation();
+                startDragSelection(feature, layer);
+            }
+        }
+    });
+}
+
+
 function startDragSelection(feature, layer) {
     if (!state.ctrlPressed) return;
     
