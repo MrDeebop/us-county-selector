@@ -385,6 +385,170 @@ async function handleDroppedZipFile(files) {
     }
 }
 
+// Function to get unique county-state pairs from zip code data
+function getUniqueCountyStatePairsFromZipData() {
+    if (!state.zipCodeData || !Array.isArray(state.zipCodeData)) {
+        return new Set();
+    }
+    
+    const uniquePairs = new Set();
+    state.zipCodeData.forEach(item => {
+        if (item.county && item.state) {
+            // Normalize county name and state for comparison
+            const normalizedCounty = item.county.trim().toLowerCase();
+            const normalizedState = item.state.trim().toLowerCase();
+            uniquePairs.add(`${normalizedCounty}|${normalizedState}`);
+        }
+    });
+    
+    return uniquePairs;
+}
+
+// Function to get unique county-state pairs from user's assigned groups
+function getUniqueCountyStatePairsFromGroups() {
+    const uniquePairs = new Set();
+    
+    Object.values(state.groups).forEach(group => {
+        group.counties.forEach(item => {
+            const countyName = (item.countyFeature.properties.NAME || 
+                              item.countyFeature.properties.name || 
+                              'Unknown County').trim().toLowerCase();
+            const stateName = (item.stateName || 'Unknown State').trim().toLowerCase();
+            uniquePairs.add(`${countyName}|${stateName}`);
+        });
+    });
+    
+    return uniquePairs;
+}
+
+// Function to validate zip code coverage for export
+function validateZipCodeCoverage() {
+    if (!state.zipCodeData || state.zipCodeData.length === 0) {
+        return {
+            valid: false,
+            message: 'No zip code data available. Please upload a zip code file first.',
+            type: 'error'
+        };
+    }
+    
+    if (Object.keys(state.groups).length === 0) {
+        return {
+            valid: false,
+            message: 'No groups assigned. Please create groups first.',
+            type: 'error'
+        };
+    }
+    
+    const zipCodePairs = getUniqueCountyStatePairsFromZipData();
+    const groupPairs = getUniqueCountyStatePairsFromGroups();
+    
+    const zipCodeCount = zipCodePairs.size;
+    const groupCount = groupPairs.size;
+    
+    if (groupCount > zipCodeCount) {
+        return {
+            valid: false,
+            message: `Cannot export: You have assigned ${groupCount} unique county-state pairs, but the zip code file only contains ${zipCodeCount} unique pairs. There are not enough zip codes to properly assign to each of your assigned counties.`,
+            type: 'error'
+        };
+    } else if (groupCount < zipCodeCount) {
+        return {
+            valid: true,
+            message: `Warning: Your assigned groups contain ${groupCount} unique county-state pairs, but the zip code file contains ${zipCodeCount} unique pairs. Some zip codes will not be included in the export.`,
+            type: 'warning'
+        };
+    } else {
+        return {
+            valid: true,
+            message: `Perfect match: Your assigned groups contain ${groupCount} unique county-state pairs, which matches the ${zipCodeCount} unique pairs in the zip code file.`,
+            type: 'success'
+        };
+    }
+}
+
+// Function to match counties with zip codes for export
+function matchCountiesWithZipCodes() {
+    const matches = new Map();
+    
+    // Create a map of normalized county-state pairs to zip codes
+    const zipCodeMap = new Map();
+    state.zipCodeData.forEach(item => {
+        const normalizedCounty = item.county.trim().toLowerCase();
+        const normalizedState = item.state.trim().toLowerCase();
+        const key = `${normalizedCounty}|${normalizedState}`;
+        
+        if (!zipCodeMap.has(key)) {
+            zipCodeMap.set(key, []);
+        }
+        zipCodeMap.get(key).push(item.zipCode);
+    });
+    
+    // Match each county in groups with its zip codes
+    Object.values(state.groups).forEach(group => {
+        group.counties.forEach(item => {
+            const countyName = (item.countyFeature.properties.NAME || 
+                              item.countyFeature.properties.name || 
+                              'Unknown County').trim().toLowerCase();
+            const stateName = (item.stateName || 'Unknown State').trim().toLowerCase();
+            const key = `${countyName}|${stateName}`;
+            
+            const zipCodes = zipCodeMap.get(key) || [];
+            const originalCountyName = item.countyFeature.properties.NAME || 
+                                     item.countyFeature.properties.name || 
+                                     'Unknown County';
+            
+            matches.set(`${originalCountyName}|${item.stateName}`, {
+                groupName: group.name,
+                countyName: originalCountyName,
+                stateName: item.stateName,
+                colorClass: group.colorClass,
+                zipCodes: zipCodes
+            });
+        });
+    });
+    
+    return matches;
+}
+
+// Modified export function for zip code enhanced export
+function exportToExcelWithZipCodes() {
+    const validation = validateZipCodeCoverage();
+    
+    if (!validation.valid) {
+        showMessage(validation.message, validation.type, document.getElementById('zip-message'));
+        return;
+    }
+    
+    // Show validation message regardless of type
+    showMessage(validation.message, validation.type, document.getElementById('zip-message'));
+    
+    try {
+        const matches = matchCountiesWithZipCodes();
+        const data = [['Group Name', 'County Name', 'State', 'Color', 'Zip Codes']];
+        
+        matches.forEach(match => {
+            const zipCodesString = match.zipCodes.join(', ');
+            data.push([
+                match.groupName,
+                match.countyName,
+                match.stateName,
+                match.colorClass.replace('group-color-', ''),
+                zipCodesString
+            ]);
+        });
+        
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, 'County Groups with Zip Codes');
+        XLSX.writeFile(wb, 'county_groups_with_zipcodes.xlsx');
+        
+        showMessage('Excel file with zip codes exported successfully', 'success', document.getElementById('zip-message'));
+    } catch (error) {
+        showMessage(`Export failed: ${error.message}`, 'error', document.getElementById('zip-message'));
+        console.error(error);
+    }
+}
+
 function processExcelData(data) {
     // Skip header row
     const rows = data.slice(1);
