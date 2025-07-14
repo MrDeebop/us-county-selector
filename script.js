@@ -101,17 +101,25 @@ function setupEventListeners() {
     // Keyboard event listeners for Ctrl key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Control' || e.ctrlKey) {
-            state.ctrlPressed = true;
-            // Change cursor to indicate drag selection mode
-            elements.map.getContainer().style.cursor = 'crosshair';
+            if (!state.ctrlPressed) {
+                state.ctrlPressed = true;
+                // Disable map dragging
+                map.dragging.disable();
+                // Change cursor to indicate drag selection mode
+                elements.map.getContainer().style.cursor = 'crosshair';
+                document.body.classList.add('drag-selection-mode');
+            }
         }
     });
     
     document.addEventListener('keyup', (e) => {
         if (e.key === 'Control' || !e.ctrlKey) {
             state.ctrlPressed = false;
+            // Re-enable map dragging
+            map.dragging.enable();
             // Reset cursor
             elements.map.getContainer().style.cursor = '';
+            document.body.classList.remove('drag-selection-mode');
             // End any active drag selection
             if (state.isDragging) {
                 endDragSelection();
@@ -119,26 +127,24 @@ function setupEventListeners() {
         }
     });
     
-    // Global mouse events for drag selection (only when Ctrl is pressed)
-    document.addEventListener('mouseup', (e) => {
-        if (state.isDragging && state.ctrlPressed) {
-            endDragSelection();
-        }
-    });
-    
-    document.addEventListener('mouseleave', (e) => {
-        if (state.isDragging) {
-            endDragSelection();
-        }
-    });
-    
     // Handle window blur to reset Ctrl state
     window.addEventListener('blur', () => {
         state.ctrlPressed = false;
+        map.dragging.enable();
         elements.map.getContainer().style.cursor = '';
+        document.body.classList.remove('drag-selection-mode');
         if (state.isDragging) {
             endDragSelection();
         }
+    });
+    
+    // Handle window focus to check ctrl state
+    window.addEventListener('focus', () => {
+        // Reset ctrl state when window regains focus
+        state.ctrlPressed = false;
+        map.dragging.enable();
+        elements.map.getContainer().style.cursor = '';
+        document.body.classList.remove('drag-selection-mode');
     });
 }
 
@@ -659,48 +665,8 @@ function displayGeoJSON(geojson) {
         
         updateSelectedCountiesDisplay();
     }
-
     
-    function onEachFeature(feature, layer) {
-        layer.on({
-            click: (e) => {
-                e.originalEvent.preventDefault();
-                if (!state.isDragging) {
-                    toggleCountySelection(feature, layer);
-                }
-            },
-            mouseover: (e) => {
-                if (state.isDragging && state.ctrlPressed) {
-                    // Add county to drag selection if not already selected
-                    const countyId = getCountyId(feature);
-                    if (!state.dragSelectedCounties.has(countyId)) {
-                        state.dragSelectedCounties.add(countyId);
-                        addCountyToSelection(feature, layer);
-                    }
-                } else {
-                    highlightFeature(e);
-                }
-            },
-            mouseout: (e) => {
-                if (!state.isDragging) {
-                    resetHighlight(e);
-                }
-            },
-            mousedown: (e) => {
-                if (state.ctrlPressed) {
-                    e.originalEvent.preventDefault();
-                    startDragSelection(feature, layer);
-                }
-            },
-            mouseup: (e) => {
-                if (state.ctrlPressed && state.isDragging) {
-                    e.originalEvent.preventDefault();
-                    endDragSelection();
-                }
-            }
-        });
-    }
-    
+    // Use the updated onEachFeature function here
     geoJsonLayer = L.geoJSON(geojson, {
         style: style,
         onEachFeature: onEachFeature
@@ -788,6 +754,45 @@ function startDragSelection(feature, layer) {
     // Prevent text selection during drag
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
+    document.body.style.msUserSelect = 'none';
+    
+    // Add global mouse events for drag continuation
+    const handleMouseMove = (e) => {
+        if (!state.isDragging || !state.ctrlPressed) return;
+        
+        // Get element under mouse
+        const elementUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
+        
+        // Check if we're over a county layer
+        if (geoJsonLayer) {
+            geoJsonLayer.eachLayer(countyLayer => {
+                if (countyLayer.getElement && countyLayer.getElement() === elementUnderMouse) {
+                    const countyId = getCountyId(countyLayer.feature);
+                    if (!state.dragSelectedCounties.has(countyId)) {
+                        state.dragSelectedCounties.add(countyId);
+                        addCountyToSelection(countyLayer.feature, countyLayer);
+                    }
+                } else if (countyLayer._path === elementUnderMouse) {
+                    const countyId = getCountyId(countyLayer.feature);
+                    if (!state.dragSelectedCounties.has(countyId)) {
+                        state.dragSelectedCounties.add(countyId);
+                        addCountyToSelection(countyLayer.feature, countyLayer);
+                    }
+                }
+            });
+        }
+    };
+    
+    const handleMouseUp = (e) => {
+        if (state.isDragging) {
+            endDragSelection();
+        }
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 }
 
 function endDragSelection() {
@@ -798,9 +803,13 @@ function endDragSelection() {
         // Re-enable text selection
         document.body.style.userSelect = '';
         document.body.style.webkitUserSelect = '';
+        document.body.style.msUserSelect = '';
         
         // Update display
         updateSelectedCountiesDisplay();
+        
+        // Clear drag selection set
+        state.dragSelectedCounties.clear();
     }
 }
 
