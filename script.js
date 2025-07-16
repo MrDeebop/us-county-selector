@@ -916,21 +916,9 @@ function clearSelection() {
     updateSelectedCountiesDisplay();
 }
 
-// Group management
-function createGroup() {
-    const groupName = elements.groupNameInput.value.trim();
-    if (!groupName) {
-        showMessage('Please enter a group name', 'error', elements.exportMessage);
-        return;
-    }
-    
-    if (state.selectedCounties.length === 0) {
-        showMessage('No counties selected to add to group', 'error', elements.exportMessage);
-        return;
-    }
-    
+function createNewGroup(groupName) {
     const groupId = Date.now().toString();
-    const colorClass = getNextAvailableColor(); // Use the new function
+    const colorClass = getNextAvailableColor();
     
     state.groups[groupId] = {
         name: groupName,
@@ -948,7 +936,7 @@ function createGroup() {
                 if (getCountyId(layer.feature) === countyId) {
                     layer.setStyle({ 
                         fillColor: getColorFromClass(colorClass),
-                        weight: 1, // Reset to normal weight since it's no longer selected
+                        weight: 1,
                         color: 'white',
                         dashArray: '3'
                     });
@@ -963,6 +951,131 @@ function createGroup() {
     showMessage(`Group "${groupName}" created with ${state.selectedCounties.length} counties`, 'success', elements.exportMessage);
 }
 
+function updateGroup(groupId, newGroupName) {
+    const oldGroup = state.groups[groupId];
+    if (!oldGroup) return;
+    
+    // Remove old county mappings
+    oldGroup.counties.forEach(item => {
+        const countyId = getCountyId(item.countyFeature);
+        delete state.countyGroupMap[countyId];
+    });
+    
+    // Keep the same color class to maintain visual consistency
+    const colorClass = oldGroup.colorClass;
+    
+    // Update the group with new data
+    state.groups[groupId] = {
+        name: newGroupName,
+        counties: [...state.selectedCounties],
+        colorClass: colorClass
+    };
+    
+    // Apply new county mappings
+    state.selectedCounties.forEach(item => {
+        const countyId = getCountyId(item.countyFeature);
+        state.countyGroupMap[countyId] = colorClass;
+    });
+    
+    // Update all map styling
+    refreshAllMapStyling();
+    
+    // Reset the create button
+    elements.createGroupBtn.textContent = 'Create Group';
+    delete elements.createGroupBtn.dataset.editingGroupId;
+    
+    renderGroups();
+    clearSelection();
+    elements.groupNameInput.value = '';
+    showMessage(`Group "${newGroupName}" updated successfully`, 'success', elements.exportMessage);
+}
+
+function deleteGroup(groupId) {
+    const group = state.groups[groupId];
+    if (!group) return;
+    
+    // Remove group colors from counties
+    group.counties.forEach(item => {
+        const countyId = getCountyId(item.countyFeature);
+        delete state.countyGroupMap[countyId];
+    });
+    
+    // Delete the group
+    delete state.groups[groupId];
+    
+    // Reset any edit mode if this group was being edited
+    if (elements.createGroupBtn.dataset.editingGroupId === groupId) {
+        elements.createGroupBtn.textContent = 'Create Group';
+        delete elements.createGroupBtn.dataset.editingGroupId;
+        elements.groupNameInput.value = '';
+        clearSelection();
+    }
+    
+    // Update map styling and re-render groups
+    refreshAllMapStyling();
+    renderGroups();
+    showMessage(`Group "${group.name}" deleted successfully`, 'success', elements.exportMessage);
+}
+
+function clearSelection() {
+    if (geoJsonLayer) {
+        geoJsonLayer.eachLayer(layer => {
+            const countyId = getCountyId(layer.feature);
+            const colorClass = state.countyGroupMap[countyId];
+            
+            if (colorClass) {
+                layer.setStyle({
+                    fillColor: getColorFromClass(colorClass),
+                    weight: 1,
+                    color: 'white',
+                    dashArray: '3'
+                });
+            } else {
+                layer.setStyle({
+                    fillColor: '#3388ff',
+                    weight: 1,
+                    color: 'white',
+                    dashArray: '3'
+                });
+            }
+        });
+    }
+    
+    state.selectedCounties = [];
+    state.dragSelectedCounties.clear();
+    updateSelectedCountiesDisplay();
+    
+    // Reset edit mode if active
+    if (elements.createGroupBtn.dataset.editingGroupId) {
+        elements.createGroupBtn.textContent = 'Create Group';
+        delete elements.createGroupBtn.dataset.editingGroupId;
+        elements.groupNameInput.value = '';
+    }
+}
+
+function createGroup() {
+    const groupName = elements.groupNameInput.value.trim();
+    if (!groupName) {
+        showMessage('Please enter a group name', 'error', elements.exportMessage);
+        return;
+    }
+    
+    if (state.selectedCounties.length === 0) {
+        showMessage('No counties selected to add to group', 'error', elements.exportMessage);
+        return;
+    }
+    
+    const editingGroupId = elements.createGroupBtn.dataset.editingGroupId;
+    
+    if (editingGroupId) {
+        // Update existing group
+        updateGroup(editingGroupId, groupName);
+    } else {
+        // Create new group
+        createNewGroup(groupName);
+    }
+}
+
 function renderGroups() {
     elements.groupsContainer.innerHTML = '';
     
@@ -973,39 +1086,28 @@ function renderGroups() {
         const stateCount = new Set(group.counties.map(c => c.stateName)).size;
         
         groupEl.innerHTML = `
-            <div>
+            <div class="group-info">
                 <strong>${group.name}</strong>
                 <div>${group.counties.length} counties across ${stateCount} states</div>
             </div>
-            <button data-group-id="${groupId}" class="delete-group">Delete</button>
+            <div class="group-actions">
+                <button data-group-id="${groupId}" class="edit-group">Edit</button>
+                <button data-group-id="${groupId}" class="delete-group">Delete</button>
+            </div>
         `;
         
         elements.groupsContainer.appendChild(groupEl);
         
+        // Edit button functionality
+        groupEl.querySelector('.edit-group').addEventListener('click', (e) => {
+            const groupId = e.target.dataset.groupId;
+            startEditGroup(groupId);
+        });
+        
+        // Delete button functionality
         groupEl.querySelector('.delete-group').addEventListener('click', (e) => {
             const groupId = e.target.dataset.groupId;
-            const group = state.groups[groupId];
-            
-            // Remove group colors from counties
-            group.counties.forEach(item => {
-                const countyId = getCountyId(item.countyFeature);
-                delete state.countyGroupMap[countyId];
-                
-                // Reset map styling if layer exists
-                if (geoJsonLayer) {
-                    geoJsonLayer.eachLayer(layer => {
-                        if (getCountyId(layer.feature) === countyId) {
-                            layer.setStyle({ 
-                                fillColor: '#3388ff',
-                                weight: state.selectedCounties.some(c => getCountyId(c.countyFeature) === countyId) ? 2 : 1
-                            });
-                        }
-                    });
-                }
-            });
-            
-            delete state.groups[groupId];
-            renderGroups();
+            deleteGroup(groupId);
         });
     });
 }
@@ -1032,6 +1134,54 @@ function updateSelectedCountiesDisplay() {
         elements.selectedCountiesContainer.appendChild(countyEl);
     });
 }
+
+function startEditGroup(groupId) {
+    const group = state.groups[groupId];
+    if (!group) return;
+    
+    // Clear current selection
+    clearSelection();
+    
+    // Select all counties in the group
+    if (geoJsonLayer) {
+        group.counties.forEach(item => {
+            const countyId = getCountyId(item.countyFeature);
+            
+            // Find the corresponding layer and select it
+            geoJsonLayer.eachLayer(layer => {
+                if (getCountyId(layer.feature) === countyId) {
+                    // Add to selection without triggering the normal click handler
+                    const index = state.selectedCounties.findIndex(c => getCountyId(c.countyFeature) === countyId);
+                    if (index === -1) {
+                        state.selectedCounties.push(item);
+                        
+                        // Apply selection styling
+                        layer.setStyle({ 
+                            fillColor: getColorFromClass(group.colorClass),
+                            weight: 3,
+                            color: '#000000',
+                            dashArray: ''
+                        });
+                    }
+                }
+            });
+        });
+    }
+    
+    // Pre-fill the group name input
+    elements.groupNameInput.value = group.name;
+    
+    // Update the create button to show it's in edit mode
+    elements.createGroupBtn.textContent = 'Update Group';
+    elements.createGroupBtn.dataset.editingGroupId = groupId;
+    
+    // Show a message indicating edit mode
+    showMessage(`Editing group "${group.name}" - modify selection and click "Update Group"`, 'info', elements.exportMessage);
+    
+    // Update the selected counties display
+    updateSelectedCountiesDisplay();
+}
+
 
 // Export functions
 function exportToExcel() {
@@ -1062,6 +1212,28 @@ function exportToExcel() {
         showMessage(`Export failed: ${error.message}`, 'error', elements.exportMessage);
         console.error(error);
     }
+}
+
+// Enhanced color management to avoid conflicts
+function getNextAvailableColor(excludeColor = null) {
+    // Get all colors currently in use, excluding the specified color
+    const usedColors = new Set();
+    Object.values(state.groups).forEach(group => {
+        if (group.colorClass !== excludeColor) {
+            usedColors.add(group.colorClass);
+        }
+    });
+    
+    // Find the first unused color
+    for (let i = 0; i < GROUP_COLORS.length; i++) {
+        const color = GROUP_COLORS[i];
+        if (!usedColors.has(color)) {
+            return color;
+        }
+    }
+    
+    // If all colors are used, cycle back to the beginning
+    return GROUP_COLORS[Object.keys(state.groups).length % GROUP_COLORS.length];
 }
 
 // Utility functions
